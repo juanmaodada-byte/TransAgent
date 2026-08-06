@@ -1,0 +1,27 @@
+# TransAgent 后端依赖
+# v1.0 | 2026-08-06
+
+# ── LLM API ──
+openai>=1.0.0           # DeepSeek API 兼容 OpenAI SDK
+httpx>=0.27.0           # 异步HTTP客户端（LLM调用+Web搜索）
+
+# ── 文档处理（Vibe Coder B）──
+python-docx>=1.1.0      # docx→MD 解析 + MD→docx 反向重建
+PyMuPDF>=1.24.0         # PDF 文本提取（P1）
+
+# ── 知识库（成员 C）──
+chromadb>=0.5.0         # RAG术语库 向量数据库
+sentence-transformers>=3.0.0  # bge-m3 embedding模型
+
+# ── Web 框架 ──
+fastapi>=0.115.0        # 后端API
+uvicorn[standard]>=0.30.0  # ASGI服务器
+sse-starlette>=2.0.0    # SSE流式推送
+
+# ── 工具 ──
+rapidfuzz>=3.0.0        # TM模糊匹配（Levenshtein编辑距离）
+pyyaml>=6.0             # 配置文件解析
+
+# ── 测试 ──
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
