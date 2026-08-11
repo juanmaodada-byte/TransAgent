@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+transagent.egg-info/
+.pytest_cache/
+.vscode/
+.idea/
+.DS_Store
+workspace/
+*.log
+*.tmp
+*.swp
+dist/
+build/
+*.egg

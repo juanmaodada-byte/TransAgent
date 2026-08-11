@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transagent"
+version = "0.1.0"
+description = "TransAgent - AI-powered translation agent framework"
+requires-python = ">=3.10"
+
+[tool.setuptools.package-dir]
+transagent = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["transagent*"]
