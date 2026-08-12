@@ -16,6 +16,19 @@ FastAPI 服务，提供前端对接的 REST API + SSE 流式推送。
 import asyncio
 import json
 import os
+import sys
+
+# D6：修复 Windows 控制台 GBK 编码问题。
+# agent_framework 等模块会打印 ✓/✗ 等 Unicode 字符，
+# 在 GBK 控制台下 print 会抛 UnicodeEncodeError，导致翻译流程被误判失败。
+try:
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +54,13 @@ app.add_middleware(
 
 # 内存中的会话存储（MVP阶段·后续迁移到Redis）
 _sessions: dict[str, TranslationSession] = {}
+
+# 术语确认断点注册表：session_id → {"event": asyncio.Event, "result": list}
+# 翻译任务在术语确认处暂停并等待 /api/confirm_terms 唤醒。
+_confirm_requests: dict[str, dict] = {}
+
+# 术语确认等待超时（秒）·超时则自动接受并继续（前端断线等场景）
+CONFIRM_TIMEOUT_SECONDS = 120
 
 
 # ── 文件上传 ───────────────────────────────────────────────────────
@@ -78,6 +98,12 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 # ── 翻译（SSE流式）──────────────────────────────────────────────────
+# D6 修复：on_progress 从 async generator 改为「同步回调 + asyncio.Queue」。
+# 原因：Orchestrator 以同步方式调用 on_progress（不 await、不迭代），
+#       若 on_progress 是 async generator，yield 的 event 永远不会被消费，
+#       导致前端收不到任何 progress 事件。
+# 现方案：后台任务运行 translate()，progress 实时推入队列，
+#         event_stream 从队列消费并实时 yield（真流式）。
 
 @app.post("/api/translate")
 async def translate(file_id: str = Form(...), user_id: str = Form("demo_user")):
@@ -91,77 +117,166 @@ async def translate(file_id: str = Form(...), user_id: str = Form("demo_user")):
         return {"error": f"文件不存在: {file_id}"}
 
     async def event_stream():
-        session = None
-        try:
-            orchestrator = Orchestrator(user_id=user_id)
+        # 进度事件队列（生产者：后台 translate 任务；消费者：本生成器）
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
 
-            async def on_progress(step: str, state: StepState, msg: str):
-                """进度回调 → SSE event"""
-                data = {
-                    "type": "progress",
-                    "step": step,
-                    "state": state.value,
-                    "message": msg,
-                }
-                yield {"event": "progress", "data": json.dumps(data, ensure_ascii=False)}
+        def on_progress(step: str, state: StepState, msg: str):
+            """同步进度回调 → 推入队列（Orchestrator 同步调用）"""
+            queue.put_nowait({
+                "type": "progress",
+                "step": step,
+                "state": state.value if hasattr(state, "value") else state,
+                "message": msg,
+            })
 
-            session = await orchestrator.translate(
-                file_path=file_path,
-                on_progress=on_progress,
-                on_terms_pending=None,  # Demo模式自动接受
-            )
+        async def on_terms_pending(session, pending_terms):
+            """术语确认断点回调（async）：
+            注册确认请求 → 推送 terms_pending 事件 → 等待 /api/confirm_terms 唤醒。
+            超时自动接受；会话被取消则抛 CancelledError。"""
+            req = {
+                "event": asyncio.Event(),
+                "result": None,
+            }
+            _confirm_requests[session.session_id] = req
 
-            _sessions[session.session_id] = session
-
-            # 推送译前结果详情
-            if session.pre_translate_result:
-                st = session.pre_translate_result.strategy_book
-                if st:
-                    yield {"event": "strategy", "data": json.dumps({
-                        "ict_domain": st.ict_domain,
-                        "difficulty": st.difficulty,
-                        "style": st.style,
-                        "literal_ratio": st.literal_ratio,
-                    }, ensure_ascii=False)}
-
-                tt = session.pre_translate_result.term_table
-                if tt:
-                    yield {"event": "terms", "data": json.dumps({
-                        "total_terms": tt.total_count,
-                        "rag_hit": tt.rag_hit_count,
-                        "web_search": tt.web_search_count,
-                        "pending": len(tt.pending_entries),
-                    }, ensure_ascii=False)}
-
-            # 推送终稿
-            if session.final_text_restored:
-                yield {"event": "final", "data": json.dumps({
-                    "final_text": session.final_text_restored,
+            try:
+                # 推送待确认术语详情给前端
+                print(f"[Confirm] 会话 {session.session_id} 进入断点，{len(pending_terms)} 个术语待确认")
+                await queue.put({
+                    "type": "__terms_pending__",
                     "session_id": session.session_id,
-                }, ensure_ascii=False)}
+                    "terms": [t.to_dict() for t in pending_terms],
+                })
 
-            # 推送质检报告
-            if session.post_translate_result and session.post_translate_result.qa_report:
-                qa = session.post_translate_result.qa_report
-                yield {"event": "qa", "data": json.dumps(qa.to_dict(), ensure_ascii=False)}
+                # 等待前端确认（带超时保护）
+                try:
+                    await asyncio.wait_for(req["event"].wait(),
+                                           timeout=CONFIRM_TIMEOUT_SECONDS)
+                    print(f"[Confirm] 会话 {session.session_id} 已唤醒·继续翻译")
+                except asyncio.TimeoutError:
+                    # 超时：自动接受低置信度术语
+                    print(f"[Confirm] 会话 {session.session_id} 确认超时·自动接受")
+                    return pending_terms
 
-            # 推送进化报告
-            if session.evolution_report:
-                yield {"event": "evolution", "data": json.dumps(
-                    session.evolution_report.to_dict(), ensure_ascii=False)}
+                result = req["result"]
+                if result is None:
+                    return pending_terms
+                # 还原为 TermEntry 对象
+                from transagent.interface import TermEntry
+                return [
+                    t if isinstance(t, TermEntry) else TermEntry.from_dict(t)
+                    for t in result
+                ]
+            finally:
+                _confirm_requests.pop(session.session_id, None)
 
-            # 完成
-            yield {"event": "done", "data": json.dumps({
-                "session_id": session.session_id,
-                "elapsed_seconds": session.elapsed_seconds(),
-                "export_formats": ["docx", "html", "bilingual"],
-            }, ensure_ascii=False)}
+        async def run_translate():
+            """后台运行翻译，完成后推送 session"""
+            try:
+                orchestrator = Orchestrator(user_id=user_id)
+                session = await orchestrator.translate(
+                    file_path=file_path,
+                    on_progress=on_progress,
+                    on_terms_pending=on_terms_pending,  # 完整闭环：暂停等待用户确认
+                )
+                await queue.put({"type": "__session__", "session": session})
+            except Exception as e:
+                await queue.put({"type": "__error__", "message": str(e)})
 
-        except Exception as e:
-            yield {"event": "error", "data": json.dumps({
-                "code": "translation_failed",
-                "message": str(e),
-            }, ensure_ascii=False)}
+        task = asyncio.create_task(run_translate())
+
+        try:
+            while True:
+                ev = await queue.get()
+
+                # ── 翻译完成 → 推送各阶段结果 ──
+                if ev["type"] == "__session__":
+                    session: TranslationSession = ev["session"]
+                    _sessions[session.session_id] = session
+
+                    # 若发生过降级/错误，先推送 error 事件（前端据此展示警告）
+                    if session.errors or session.degradation_level:
+                        yield {"event": "error", "data": json.dumps({
+                            "code": "degraded",
+                            "message": (session.errors[-1] if session.errors
+                                        else "部分环节降级处理"),
+                            "degradation_level": (
+                                session.degradation_level.value
+                                if session.degradation_level else None),
+                        }, ensure_ascii=False)}
+
+                    # 推送译前结果详情
+                    if session.pre_translate_result:
+                        st = session.pre_translate_result.strategy_book
+                        if st:
+                            yield {"event": "strategy", "data": json.dumps({
+                                "ict_domain": st.ict_domain,
+                                "difficulty": st.difficulty,
+                                "style": st.style,
+                                "literal_ratio": st.literal_ratio,
+                            }, ensure_ascii=False)}
+
+                        tt = session.pre_translate_result.term_table
+                        if tt:
+                            yield {"event": "terms", "data": json.dumps({
+                                "total_terms": tt.total_count,
+                                "rag_hit": tt.rag_hit_count,
+                                "web_search": tt.web_search_count,
+                                "pending": len(tt.pending_entries),
+                            }, ensure_ascii=False)}
+
+                    # 推送终稿
+                    if session.final_text_restored:
+                        yield {"event": "final", "data": json.dumps({
+                            "final_text": session.final_text_restored,
+                            "session_id": session.session_id,
+                        }, ensure_ascii=False)}
+
+                    # 推送质检报告
+                    if (session.post_translate_result
+                            and session.post_translate_result.qa_report):
+                        qa = session.post_translate_result.qa_report
+                        yield {"event": "qa", "data": json.dumps(
+                            qa.to_dict(), ensure_ascii=False)}
+
+                    # 推送进化报告
+                    if session.evolution_report:
+                        yield {"event": "evolution", "data": json.dumps(
+                            session.evolution_report.to_dict(),
+                            ensure_ascii=False)}
+
+                    # 完成
+                    yield {"event": "done", "data": json.dumps({
+                        "session_id": session.session_id,
+                        "elapsed_seconds": session.elapsed_seconds(),
+                        "export_formats": ["docx", "html", "bilingual"],
+                    }, ensure_ascii=False)}
+                    break
+
+                # ── 术语确认断点：等待用户确认 ──
+                elif ev["type"] == "__terms_pending__":
+                    yield {"event": "terms_pending", "data": json.dumps({
+                        "session_id": ev["session_id"],
+                        "pending_terms": ev["terms"],
+                    }, ensure_ascii=False)}
+
+                # ── 翻译异常终止 ──
+                elif ev["type"] == "__error__":
+                    yield {"event": "error", "data": json.dumps({
+                        "code": "translation_failed",
+                        "message": ev["message"],
+                    }, ensure_ascii=False)}
+                    break
+
+                # ── 实时进度事件 ──
+                else:
+                    yield {"event": "progress", "data": json.dumps(
+                        ev, ensure_ascii=False)}
+
+        finally:
+            # 清理后台任务
+            if not task.done():
+                task.cancel()
 
     return EventSourceResponse(event_stream())
 
@@ -171,12 +286,31 @@ async def translate(file_id: str = Form(...), user_id: str = Form("demo_user")):
 @app.post("/api/confirm_terms")
 async def confirm_terms(session_id: str = Form(...),
                         confirmed_terms: str = Form("[]")):
-    """用户确认低置信度术语（暂未实现完整的断点恢复·MVP阶段为预留接口）"""
-    session = _sessions.get(session_id)
-    if not session:
+    """用户确认低置信度术语：唤醒暂停的翻译任务并应用确认结果。
+
+    请求体：confirmed_terms 为 JSON 字符串，数组项含
+    {term, translation, action, confidence, ...}。
+    """
+    req = _confirm_requests.get(session_id)
+    if not req:
+        # 没有待确认的断点（可能已确认或超时）
+        session = _sessions.get(session_id)
+        if session:
+            return {"accepted": False, "count": 0,
+                    "message": "该会话当前没有待确认的术语"}
         return {"error": "会话不存在"}
 
-    terms = json.loads(confirmed_terms)
+    try:
+        terms = json.loads(confirmed_terms)
+    except json.JSONDecodeError:
+        return {"error": "confirmed_terms 不是合法 JSON"}
+
+    if not isinstance(terms, list):
+        return {"error": "confirmed_terms 应为数组"}
+
+    # 唤醒翻译任务（返回确认结果，orchestrator 会应用并继续）
+    req["result"] = terms
+    req["event"].set()
     return {"accepted": True, "count": len(terms)}
 
 

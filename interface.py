@@ -233,6 +233,9 @@ class StrategyBook:
         "sentence_length": "medium",
         "voice": "active",
     })
+    analysis_notes: str = ""         # 策略判断依据（D5技能化后LLM产出·此前被丢弃）
+    direction: str = ""              # 翻译方向 "en_to_zh" | "zh_to_en"（D5目录化后新增·
+                                     # 由策略技能从输入记录·译中主译/一致性以本字段路由方向）
 
     def to_dict(self) -> dict:
         return {
@@ -243,6 +246,8 @@ class StrategyBook:
             "literal_ratio": self.literal_ratio,
             "target_audience": self.target_audience,
             "rules": self.rules,
+            "analysis_notes": self.analysis_notes,
+            "direction": self.direction,
         }
 
 
@@ -553,3 +558,6 @@ EVOLUTION_RESPONSE_SCHEMA = {
 # 变更记录
 # ══════════════════════════════════════════════════════════════════
 # v1.0 | 2026-08-06 | D1 初始版本，锁定全部数据契约
+# v1.1 | 2026-08-07 | D2 Vibe Coder A: 新增 agent_framework.py（Sub-Agent调用框架·内部模块）
+#                         BaseAgent/AgentContext/AgentResult/spawn/spawn_parallel 均为 core/ 内部实现
+#                         接口契-约本身无变更，三个 Sub-Agent 的 spawn_* 函数签名保持向后兼容

@@ -7,3 +7,14 @@ venv/
 *.egg-info/
 dist/
 build/
+
+# Test output / scratch
+workspace/
+*.bak
+
+# Downloaded model weights (re-download from HuggingFace at setup)
+backend/knowledge/rag/rag/models/
+
+# Runtime vector index / SQLite databases (regenerated on index)
+backend/knowledge/rag/rag/data/knowledge/chroma/
+backend/knowledge/rag/rag/data/knowledge/*.db

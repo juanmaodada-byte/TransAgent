@@ -1,0 +1,71 @@
+/* ── Header ── */
+.header {
+  background: #fff;
+  border-bottom: 1px solid var(--color-gray-200);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-gray-800);
+  text-decoration: none;
+}
+
+.header-logo:hover {
+  color: var(--color-gray-800);
+}
+
+.header-icon {
+  font-size: 1.4rem;
+}
+
+.header-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-gray-900);
+}
+
+.header-subtitle {
+  font-size: 0.82rem;
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-health-link {
+  font-size: 0.82rem;
+  color: var(--color-gray-500);
+  transition: color 0.2s;
+}
+
+.header-health-link:hover {
+  color: var(--color-primary);
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .header-subtitle {
+    display: none;
+  }
+}

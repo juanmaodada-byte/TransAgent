@@ -1,216 +1,122 @@
 """
 译中Sub-Agent
 =============
-Vibe Coder A | v1.0 | 2026-08-06
+Vibe Coder A | v1.3 | 2026-08-10 (D5)
 
-职责：TM搜索 → 逐chunk主译 → 一致性检查（Python预检+LLM条件触发）
-内部：1次LLM调用（主译）+ 0~1次LLM调用（一致性修复·条件触发）
+职责：译中agent说明书 + 工作流协调（按工作流调用两个技能）
+内部：技能一·主译（逐chunk·串行/并行）→ 技能二·一致性检查与修复（多chunk条件触发）
 
 输入：chunks + TermTable + StrategyBook + TM参考
 输出：TranslateResult（初译稿 + 一致性报告）
+
+D2更新：继承BaseAgent框架，支持统一spawn/超时/取消；新增并行chunk翻译能力
+D4更新：主译Prompt调优·一致性预检强化·一致性检查重构为共用helper
+D5更新（技能化重构）：
+  - 技能目录化：core/skills/<skill_dir>/（skill.md说明书 + reference/参考材料 + scripts/实现）
+  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
+  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
+  - 翻译方向以策略书 direction 字段为准（策略技能已从输入记录）——
+    本模块仅在策略书未记录时用调用参数兜底（direction="" 时默认 en_to_zh）
+  - chunk翻译失败由工作流降级（标记[翻译失败]保留原文·不影响其余chunk）
 """
 
 from transagent.interface import (
     Chunk, TermTable, StrategyBook, TMEntry, TranslateResult, ConsistencyReport,
 )
-from transagent.backend.core.llm_client import chat
-from transagent.backend.config import get_config
-import json
+from transagent.backend.core.agent_framework import (
+    BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
+    spawn_parallel, SpawnTask,
+)
+from transagent.backend.core.skills.translate_skills.chunk_translate.scripts.chunk_translate_skill import ChunkTranslateSkill
+from transagent.backend.core.skills.translate_skills.consistency_fix.scripts.consistency_skill import ConsistencySkill
 
-# ── Prompt模板 ────────────────────────────────────────────────────
 
-TRANSLATE_EN_ZH_PROMPT = """你是ICT领域资深技术翻译专家。你的任务是将英文ICT文档翻译为专业、自然的中文。
+# ══════════════════════════════════════════════════════════════════
+# 译中agent 系统提示词（注明两个技能 + 工作流）
+# ══════════════════════════════════════════════════════════════════
 
-## 翻译规则
+TRANSLATE_AGENT_SYSTEM_PROMPT = """你是"译中Sub-Agent"——负责文档的主体翻译。
+你收到的材料：chunk列表（待翻译文本）、项目术语表、翻译策略书、TM参考（翻译记忆中的相似句段）。
 
-1. **术语强制使用**：对照项目术语表，术语表中的词汇必须使用指定译法。不要自由发挥。
-2. **不在术语表中的词汇**：根据上下文合理翻译，保持与策略书风格一致。
-3. **占位符保护**：
-   - 看到 {NT_n} 占位符 → 原样保留，不翻译不修改
-   - 这些占位符代表代码/URL/命令等不可译内容，翻译后会还原
-4. **ICT风格要求**：
-   - 专业、简洁、主动语态
-   - 英文长句 → 中文短句（拆分长句）
-   - 被动句 → 主动句（避免"被"字泛滥）
-   - 技术缩写首次出现给全称+缩写
-5. **不要增译、漏译、曲解原文**
-6. **代码块、命令行、API名等不译内容已被占位符保护，你看到{NT_n}直接原样输出即可**
+你具备以下两项技能，系统按工作流调用；每次调用只会在本说明书之后追加一份技能说明书，
+你只需执行追加的那份技能对应的工作：
 
-## 输出
+【技能一：主译】（chunk_translate）
+将单个chunk的文本译为目标语言：术语按项目术语表强制使用（标【不译】的保留原文）、
+TM参考保持一致风格、遵循策略书。翻译方向以策略书中的"翻译方向"字段为准。
+输出：该chunk的译文（MD文本·直接输出译文，无解释）。
 
-直接输出翻译后的MD文本。不要添加解释、不要添加前缀。只输出译文。
+【技能二：一致性检查与修复】（consistency_fix）
+对比多chunk初译稿：修复术语/占位符/代码块/风格不一致，输出统一的完整译文。
+翻译方向同样以策略书中的"翻译方向"字段为准。
+输出：修复后的完整MD译文。
+
+工作流程（固定顺序·由系统编排）：
+1. 先对每个chunk执行技能一（主译）。单chunk一次；多chunk时每个chunk一次
+   （串行：前chunk译文作后chunk上下文参考；并行：每chunk独立携带完整策略）。
+2. 多chunk时，系统先做确定性预检（Python·零成本）；预检发现不一致才触发技能二。单chunk跳过。
+3. {NT_n}/{T_n}占位符原样保留，绝不翻译、修改、删除。
+
+执行规则：
+- 每次调用只执行追加的那份技能说明书对应的工作，不得执行另一项技能。
+- 技能一直接输出译文MD文本；技能二输出修复后的完整译文。不要添加解释、不要用代码块包裹整篇译文。
 """
 
-TRANSLATE_ZH_EN_PROMPT = """You are a senior ICT technical translator. Your task is to translate Chinese ICT documents into professional, natural English.
 
-## Translation Rules
-
-1. **Mandatory term usage**: Strictly follow the project glossary. Glossary terms must use the specified translation.
-2. **Terms not in glossary**: Translate according to context, maintaining consistency with the strategy book style.
-3. **Placeholder protection**:
-   - {NT_n} placeholders → keep as-is, do not translate or modify
-   - These represent code/URLs/commands that must not be translated
-4. **ICT style requirements**:
-   - Professional, concise, active voice
-   - Chinese long sentences → natural English sentences
-   - Maintain technical accuracy; prefer clarity over literal translation
-   - Technical abbreviations: keep as-is (e.g., API, SDK, CLI)
-5. **No addition, omission, or distortion of the original meaning**
-6. **Code blocks, CLI commands, API names should be kept as-is or represented by {NT_n}**
-
-## Output
-
-Output the translated Markdown text directly. No explanations, no prefixes. Just the translation.
-"""
-
-TM_REF_TEMPLATE = """
-## 翻译记忆参考（相似句段的已有译法）
-
-以下是从你的个人翻译记忆库中找到的相似句段参考。请保持风格一致，但根据实际上下文灵活调整。
-
-{tm_snippets}
-
----
-"""
-
-CONSISTENCY_SYSTEM_PROMPT = """你是翻译一致性审核专家。你的任务是修复多chunk翻译中的术语和风格不一致问题。
-
-## 输入
-- 多个chunk的初译稿
-- 项目术语表
-- 占位符映射表
-
-## 检查维度
-1. 术语一致性：同一术语在不同chunk的译法是否一致
-2. 占位符完整性：{NT_n}占位符是否完整保留
-3. 代码块完整性：代码块内容是否未被修改
-4. 风格一致性：不同chunk的语气、句式是否统一
-
-## 输出
-合并为一份统一的初译稿。直接输出修复后的完整译文。不要添加解释。"""
-
+# ══════════════════════════════════════════════════════════════════
+# 工作流协调器（按工作流调用skill·代码固定顺序）
+# ══════════════════════════════════════════════════════════════════
 
 async def spawn_translate(
     chunks: list[Chunk],
     term_table: TermTable,
     strategy_book: StrategyBook,
     tm_refs: list[TMEntry] | None = None,
-    direction: str = "en_to_zh",
+    direction: str = "",
 ) -> TranslateResult:
     """
-    译中Sub-Agent主入口。
+    译中Sub-Agent主入口（串行工作流）。
 
-    执行顺序：TM搜索 → 逐chunk主译 → 一致性检查（条件触发）
+    执行顺序（写死在代码里，AI不能跳步）：
+      1. 技能一·主译：逐chunk翻译（前chunk译文作后chunk上下文·前2000字符）
+      2. 技能二·一致性检查与修复：仅多chunk时触发（Python预检+LLM条件修复）
 
     Args:
-        direction: "en_to_zh" (默认) 或 "zh_to_en"
+        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
+                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
     """
-    cfg = get_config().pipeline
+    # 方向单一事实来源=策略书：未记录时用调用参数兜底
+    if not strategy_book.direction:
+        strategy_book.direction = direction or "en_to_zh"
 
-    # 根据翻译方向选择 System Prompt
-    if direction == "zh_to_en":
-        translate_prompt = TRANSLATE_ZH_EN_PROMPT
-        lang_label_source = "中文"
-        lang_label_target = "英文"
-        source_label = "待翻译文本"
-        context_label = "前文翻译（上下文参考）"
-    else:
-        translate_prompt = TRANSLATE_EN_ZH_PROMPT
-        lang_label_source = "英文"
-        lang_label_target = "中文"
-        source_label = "待翻译文本"
-        context_label = "前文翻译（上下文参考）"
+    chunk_skill = ChunkTranslateSkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
+    consistency_skill = ConsistencySkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
 
-    # ── Step 1: 构建术语表提示 ──
-    term_context = _build_term_context(term_table)
-
-    # ── Step 2: 构建TM参考 ──
-    tm_context = _build_tm_context(tm_refs) if tm_refs else ""
-
-    # ── Step 3: 构建策略上下文 ──
-    strategy_context = f"""
-翻译策略：
-- ICT子领域：{strategy_book.ict_domain}
-- 难度：{strategy_book.difficulty}
-- 风格：{strategy_book.style}
-- 直译/意译比例：{strategy_book.literal_ratio}
-- 翻译方向：{lang_label_source} → {lang_label_target}
-- 规则：{json.dumps(strategy_book.rules, ensure_ascii=False)}
-"""
-
-    # ── Step 4: 逐chunk翻译 ──
+    # ── Step 1: 逐chunk主译（技能一·串行）──
     draft_parts: list[str] = []
     prev_translation = ""
 
     for chunk in chunks:
-        chunk_prompt = f"""
-{strategy_context}
-
-{term_context}
-
-{tm_context}
-
-## {source_label}
-
-{chunk.source_text}
-"""
-        if prev_translation:
-            chunk_prompt += f"\n\n## {context_label}\n{prev_translation[-2000:]}"
-
         try:
-            translated = await chat(
-                translate_prompt, chunk_prompt,
-                temperature=cfg.translate_temperature,
-                max_tokens=cfg.translate_max_tokens,
+            translated = await chunk_skill.execute(
+                chunk=chunk, term_table=term_table, strategy_book=strategy_book,
+                tm_refs=tm_refs, prev_translation=prev_translation,
             )
-            draft_parts.append(translated if isinstance(translated, str) else str(translated))
-            prev_translation = translated if isinstance(translated, str) else str(translated)
+            draft_parts.append(translated)
+            prev_translation = translated
         except Exception as e:
-            print(f"[TranslateAgent] chunk翻译失败: {e}")
-            # 失败时保留原文
+            # chunk失败降级：标记原文保留·不影响其余chunk·前文上下文不更新
+            print(f"[TranslateAgent] chunk {chunk.chunk_id} 翻译失败: {e}")
             draft_parts.append(f"[翻译失败] {chunk.source_text[:200]}...")
 
-    # ── Step 5: 合并初译稿 ──
-    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else draft_parts[0] if draft_parts else ""
-
-    # ── Step 6: 一致性检查（仅多chunk时触发）──
-    consistency_report = ConsistencyReport()
-
+    # ── Step 2: 合并初译稿 + 一致性检查（技能二·仅多chunk时触发）──
+    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else (draft_parts[0] if draft_parts else "")
     if len(chunks) > 1:
-        # Python确定性预检
-        precheck_issues = _consistency_precheck(draft_parts, term_table, chunks)
-        consistency_report.issues_found = len(precheck_issues)
-
-        if precheck_issues:
-            # 预检发现不一致 → 触发LLM修复
-            consistency_report.precheck_passed = False
-            consistency_report.llm_fix_triggered = True
-            try:
-                fix_prompt = f"""
-## 项目术语表
-{json.dumps([e.to_dict() for e in term_table.entries], ensure_ascii=False)}
-
-## 预检发现的问题
-{json.dumps(precheck_issues, ensure_ascii=False)}
-
-## 各chunk初译稿
-"""
-                for i, (chunk, part) in enumerate(zip(chunks, draft_parts)):
-                    fix_prompt += f"\n### chunk_{i + 1}\n{part}\n"
-
-                draft = await chat(
-                    CONSISTENCY_SYSTEM_PROMPT, fix_prompt,
-                    temperature=cfg.consistency_temperature,
-                    max_tokens=cfg.consistency_max_tokens,
-                )
-                if not isinstance(draft, str):
-                    draft = str(draft)
-            except Exception as e:
-                print(f"[TranslateAgent] 一致性修复失败: {e}")
-                # 不修复，直接合并
-        else:
-            consistency_report.precheck_passed = True
-            consistency_report.llm_fix_triggered = False
+        draft, consistency_report = await consistency_skill.execute(
+            draft_parts, chunks, term_table, strategy_book
+        )
+    else:
+        consistency_report = ConsistencyReport()
 
     return TranslateResult(
         draft=draft,
@@ -219,72 +125,137 @@ async def spawn_translate(
     )
 
 
-def _build_term_context(term_table: TermTable) -> str:
-    """构建术语表prompt片段"""
-    if not term_table.entries:
-        return "## 项目术语表\n（无预定义术语）"
-
-    lines = ["## 项目术语表（以下术语必须使用指定译法）"]
-    for e in term_table.entries:
-        action_tag = "【不译】" if e.action == "notranslate" else ""
-        lines.append(f"- {e.term} → {e.translation} {action_tag}")
-    return "\n".join(lines)
-
-
-def _build_tm_context(tm_refs: list[TMEntry]) -> str:
-    """构建TM参考prompt片段"""
-    snippets = []
-    for e in tm_refs[:5]:  # 最多5条参考
-        snippets.append(f"[{e.similarity:.0%}] '{e.source_seg.strip()[:120]}' → '{e.target_seg.strip()[:120]}'")
-    return TM_REF_TEMPLATE.format(tm_snippets="\n".join(snippets))
-
-
-def _consistency_precheck(
-    drafts: list[str],
-    term_table: TermTable,
+async def spawn_translate_parallel(
     chunks: list[Chunk],
-) -> list[dict]:
+    term_table: TermTable,
+    strategy_book: StrategyBook,
+    tm_refs: list[TMEntry] | None = None,
+    direction: str = "",
+    max_concurrency: int = 4,
+    parent_context: AgentContext | None = None,
+) -> TranslateResult:
     """
-    Python确定性预检（毫秒级·零成本）。
-    检查术语一致性、{NT_n}占位符完整性、代码块保留。
+    并行chunk翻译（D2新增能力·D5技能化后走技能一）。
+
+    与串行模式的区别：
+      - 所有chunk同时翻译（无跨chunk上下文传递）
+      - 每个chunk独立携带完整策略书+术语表+TM参考（通过技能一的并行模式）
+      - 翻译完成后做一致性检查（Python预检+LLM条件修复）
+
+    Args:
+        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
+                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
+        max_concurrency: 最大并发chunk翻译数（默认4，避免API频率限制）
+        parent_context: 父级上下文（用于取消信号传递）
     """
-    import re
-    issues: list[dict] = []
+    # 方向单一事实来源=策略书：未记录时用调用参数兜底
+    if not strategy_book.direction:
+        strategy_book.direction = direction or "en_to_zh"
 
-    # 1. 检查{NT_n}占位符完整性
-    for i, (draft, chunk) in enumerate(zip(drafts, chunks)):
-        expected_nts = re.findall(r'\{NT_\d+\}', chunk.source_text)
-        actual_nts = re.findall(r'\{NT_\d+\}', draft)
-        missing = set(expected_nts) - set(actual_nts)
-        if missing:
-            issues.append({
-                "type": "missing_placeholder",
-                "chunk": i + 1,
-                "missing": list(missing),
-            })
+    chunk_skill = ChunkTranslateSkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
+    consistency_skill = ConsistencySkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
 
-    # 2. 检查核心术语一致性（跨chunk）
-    if len(drafts) > 1 and term_table.entries:
-        for term_entry in term_table.entries[:10]:  # 检查前10个核心术语
-            translations_found = set()
-            for i, draft in enumerate(drafts):
-                if term_entry.term.lower() in draft.lower():
-                    # 在译文中找对应译法（简单反向匹配）
-                    translations_found.add(i)
-            if len(translations_found) > 0 and len(translations_found) < len(drafts):
-                # 术语在某些chunk出现但其他chunk没出现 → 不一定是问题，仅记录
-                pass
+    # ── Step 1: 并行主译（技能一·并行模式·每chunk一个任务）──
+    tasks = [
+        SpawnTask(
+            name=f"translate_{chunk.chunk_id}",
+            func=chunk_skill.execute,
+            args=(chunk, term_table, strategy_book),
+            kwargs={
+                "tm_refs": tm_refs,
+                "parallel_mode": True,
+            },
+            context=AgentContext.simple(
+                f"ChunkTranslator[{chunk.chunk_id}]",
+                timeout=120.0,
+            ),
+        )
+        for chunk in chunks
+    ]
 
-    # 3. 检查代码块标记是否保留
-    for i, draft in enumerate(drafts):
-        src_blocks = len(re.findall(r'```', chunks[i].source_text))
-        tgt_blocks = len(re.findall(r'```', draft))
-        if src_blocks != tgt_blocks:
-            issues.append({
-                "type": "code_block_mismatch",
-                "chunk": i + 1,
-                "expected": src_blocks,
-                "actual": tgt_blocks,
-            })
+    results = await spawn_parallel(tasks, max_concurrency=max_concurrency, parent_context=parent_context)
 
-    return issues
+    # 合并结果（按原chunk顺序）
+    draft_parts: list[str] = []
+    for i, result in enumerate(results):
+        if result.success:
+            draft_parts.append(str(result.data))
+        else:
+            chunk = chunks[i]
+            draft_parts.append(f"[翻译失败:{result.error[:80]}] {chunk.source_text[:200]}...")
+
+    # ── Step 2: 合并初译稿 + 一致性检查（技能二·仅多chunk时触发）──
+    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else (draft_parts[0] if draft_parts else "")
+    consistency_report = ConsistencyReport()
+    if len(chunks) > 1:
+        draft, consistency_report = await consistency_skill.execute(
+            draft_parts, chunks, term_table, strategy_book
+        )
+
+    return TranslateResult(
+        draft=draft,
+        consistency_report=consistency_report,
+        tm_refs_used=len(tm_refs) if tm_refs else 0,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# BaseAgent 封装（D2新增·D5保持）
+# ══════════════════════════════════════════════════════════════════
+
+@register_agent
+class TranslateAgent(BaseAgent):
+    """
+    译中Sub-Agent（BaseAgent封装）。
+
+    使用方式：
+        # 串行模式（向后兼容）
+        result = await spawn_translate(chunks, term_table, strategy_book, tm_refs)
+
+        # 并行模式（D2新增·多chunk加速）
+        result = await spawn_translate_parallel(chunks, term_table, strategy_book, tm_refs)
+
+        # 通过 BaseAgent.run()（统一框架·自动选择模式）
+        agent = TranslateAgent(context=AgentContext.simple("TranslateAgent", timeout=300))
+        agent.parallel_mode = True  # 启用并行chunk翻译
+        agent.max_concurrency = 4
+        result = await agent.run(chunks, term_table, strategy_book, tm_refs)
+    """
+
+    def __init__(self, context: AgentContext | None = None):
+        super().__init__(context)
+        self.parallel_mode: bool = False        # 是否使用并行chunk翻译
+        self.max_concurrency: int = 4            # 并行chunk最大并发数
+
+    @property
+    def agent_name(self) -> str:
+        return "TranslateAgent"
+
+    def default_context(self) -> AgentContext:
+        return AgentContext(
+            agent_name=self.agent_name,
+            timeout_seconds=300.0,  # 多chunk翻译需要更长时间
+        )
+
+    async def execute(
+        self,
+        chunks: list[Chunk],
+        term_table: TermTable,
+        strategy_book: StrategyBook,
+        tm_refs: list[TMEntry] | None = None,
+        direction: str = "en_to_zh",
+    ) -> TranslateResult:
+        """执行译中流程。根据parallel_mode选择串行/并行。"""
+        if self.parallel_mode and len(chunks) > 1:
+            print(f"[TranslateAgent] 并行模式：{len(chunks)} chunks, max_concurrency={self.max_concurrency}")
+            return await spawn_translate_parallel(
+                chunks, term_table, strategy_book, tm_refs,
+                direction=direction,
+                max_concurrency=self.max_concurrency,
+                parent_context=self.context,
+            )
+        else:
+            return await spawn_translate(
+                chunks, term_table, strategy_book, tm_refs,
+                direction=direction,
+            )

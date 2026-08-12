@@ -1,0 +1,320 @@
+[
+  {
+    "query": "TCP",
+    "expected": "Transmission Control Protocol (TCP)",
+    "translation": "传输控制协议",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "Transmission Control Protocol",
+    "expected": "Transmission Control Protocol (TCP)",
+    "translation": "传输控制协议",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "IP",
+    "expected": "Internet Protocol (IP)",
+    "translation": "网际协议",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "Internet Protocol",
+    "expected": "Internet Protocol (IP)",
+    "translation": "网际协议",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "TCP/IP",
+    "expected": "TCP/IP",
+    "translation": "TCP/IP",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "LAN",
+    "expected": "Local Area Network (LAN)",
+    "translation": "局域网",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "Local Area Network",
+    "expected": "Local Area Network (LAN)",
+    "translation": "局域网",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "WAN",
+    "expected": "Wide Area Network (WAN)",
+    "translation": "广域网",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "Wide Area Network",
+    "expected": "Wide Area Network (WAN)",
+    "translation": "广域网",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "IPAddress",
+    "expected": "Internet Protocol Address (IP Address)",
+    "translation": "IP 地址 / 网际协议地址",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "Router",
+    "expected": "Router",
+    "translation": "路由器",
+    "kind": "全称",
+    "note": "书内表面形式-全称"
+  },
+  {
+    "query": "API",
+    "expected": "Application Programming Interface (API)",
+    "translation": "应用程序编程接口",
+    "kind": "缩写",
+    "note": "书内表面形式-缩写"
+  },
+  {
+    "query": "TCP",
+    "expected": "Transmission Control Protocol (TCP)",
+    "kind": "书内缩写",
+    "note": "书内高频缩写-应命中"
+  },
+  {
+    "query": "IP",
+    "expected": "Internet Protocol (IP)",
+    "kind": "书内缩写",
+    "note": "书内高频缩写-应命中"
+  },
+  {
+    "query": "virtual private network",
+    "expected": "Virtual Private Network (VPN)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "software-defined networking",
+    "expected": "Software-Defined Networking (SDN)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "packet switching",
+    "expected": "Packet Switching",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "load balancing",
+    "expected": "Load Balancing",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "firewall protection",
+    "expected": "Firewall",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "domain name system",
+    "expected": "Domain Name System (DNS)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "wireless local area network",
+    "expected": "Wireless Local Area Network (WLAN)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "metropolitan area network",
+    "expected": "Metropolitan Area Network (MAN)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "software-defined wide area network",
+    "expected": "Software-Defined Wide Area Network (SD-WAN)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "mobile fifth generation networks",
+    "expected": "5G (Fifth Generation Mobile Network)",
+    "kind": "改写",
+    "note": "网络领域改写-应命中"
+  },
+  {
+    "query": "传输控制协议",
+    "expected": "Transmission Control Protocol (TCP)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "网际协议",
+    "expected": "Internet Protocol (IP)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "局域网",
+    "expected": "Local Area Network (LAN)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "广域网",
+    "expected": "Wide Area Network (WAN)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "路由器",
+    "expected": "Router",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "应用程序编程接口",
+    "expected": "Application Programming Interface (API)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "域名系统",
+    "expected": "Domain Name System (DNS)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "防火墙",
+    "expected": "Firewall",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "负载均衡",
+    "expected": "Load Balancing",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "分组交换",
+    "expected": "Packet Switching",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "虚拟专用网络",
+    "expected": "Virtual Private Network (VPN)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "软件定义网络",
+    "expected": "Software-Defined Networking (SDN)",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "UDP",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "IPv4",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "IPv6",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "HTTP",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "SMTP",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "RPC",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "SCTP",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "socket",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "daemon",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "POSIX",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "MTU",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "MSS",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "PDU",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "client",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "server",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "fragment",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "intranet",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  },
+  {
+    "query": "sockaddr",
+    "expected": "",
+    "note": "书中出现但词库无-应未命中"
+  }
+]

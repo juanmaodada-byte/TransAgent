@@ -1,10 +1,12 @@
 """
 主Agent编排器
 =============
-Vibe Coder A | v1.0 | 2026-08-06
+Vibe Coder A | v1.1 | 2026-08-07 (D2)
 
 职责：管控翻译全流程，委托翻译核心工作给三个Sub-Agent。
       管理会话状态、知识库读写、交付层调度。
+
+D2更新：集成agent_framework，使用统一spawn接口获得超时/重试/计时能力。
 
 用法：
     orchestrator = Orchestrator(user_id="user_001")
@@ -26,12 +28,15 @@ from transagent.backend.pipeline.preprocess import preprocess
 from transagent.backend.pipeline.restore import restore_placeholders
 from transagent.backend.pipeline.aligner import align_sentences
 from transagent.backend.core.pre_agent import spawn_pre_translate
-from transagent.backend.core.translate_agent import spawn_translate
+from transagent.backend.core.translate_agent import spawn_translate, spawn_translate_parallel
 from transagent.backend.core.post_agent import spawn_post_translate
 from transagent.backend.core.degradation import handle_degradation
 from transagent.backend.knowledge.rag_terms import write_rag_terms
 from transagent.backend.knowledge.tm_store import write_tm_entries, search_tm
 from transagent.backend.knowledge.user_prefs import load_user_prefs, save_user_prefs
+from transagent.backend.core.agent_framework import (
+    AgentContext, AgentResult, spawn,
+)
 
 
 class Orchestrator:
@@ -40,14 +45,23 @@ class Orchestrator:
     def __init__(self, user_id: str, workspace_dir: str | None = None):
         self.user_id = user_id
         self.workspace_dir = workspace_dir or get_config().app.workspace_dir
+        # D2新增：并行chunk翻译配置
+        self.parallel_chunks: bool = False     # 是否启用并行chunk翻译
+        self.max_chunk_concurrency: int = 4    # 并行chunk最大并发数
 
     async def translate(
         self,
         file_path: str,
         on_progress=None,           # Callable[[str, StepState, str], None]
-        on_terms_pending=None,      # Callable[[list], list] → 用户确认后的术语
+        on_terms_pending=None,      # async/sync Callable[[session, list], list] → 用户确认后的术语
     ) -> TranslationSession:
-        """执行完整翻译流程"""
+        """执行完整翻译流程。
+
+        D2新增：可通过 Orchestrator.parallel_chunks = True 启用并行chunk翻译，
+        显著加速长文档（5+ chunks）的翻译过程。
+        术语确认：on_terms_pending 支持 async 与 sync 两种回调，
+        签名统一为 (session, pending_terms) -> list[TermEntry]。
+        """
 
         session = TranslationSession(
             user_id=self.user_id,
@@ -119,23 +133,42 @@ class Orchestrator:
     async def _step_pre_translate(self, session: TranslationSession, progress):
         progress("pre_translate", StepState.IN_PROGRESS, "译前Sub-Agent工作中（策略+术语）…")
 
+        # D2：使用框架spawn包装
+        agent_ctx = AgentContext(
+            agent_name="PreTranslateAgent",
+            timeout_seconds=180.0,
+            parent_session_id=session.session_id,
+        )
+
         try:
-            result = await spawn_pre_translate(
+            result: AgentResult = await spawn(
+                spawn_pre_translate,
                 session.preprocess_result,
                 session.user_prefs,
+                context=agent_ctx,
             )
-            session.pre_translate_result = result
-            session.pending_terms = result.term_table.pending_entries if result.term_table else []
 
-            domain = result.strategy_book.ict_domain if result.strategy_book else "未知"
-            term_count = result.term_table.total_count if result.term_table else 0
+            if not result.success:
+                raise RuntimeError(f"PreTranslateAgent failed: {result.error}")
+
+            session.pre_translate_result = result.data
+            pre_result = result.data
+
+            # ── 待确认术语：低置信度 + 中置信度的 LLM 生成术语 ──
+            # 术语技能把 LLM 生成的译法标为 medium（RAG命中/白名单 → high），
+            # 仅 low 触发确认会让大多数文档直接跳过确认环节。
+            # 为保障"人机交互确认"的体验，medium 的 LLM 生成术语也纳入待确认。
+            session.pending_terms = self._collect_pending_terms(pre_result.term_table)
+
+            domain = pre_result.strategy_book.ict_domain if pre_result.strategy_book else "未知"
+            term_count = pre_result.term_table.total_count if pre_result.term_table else 0
             pending = len(session.pending_terms)
 
-            msg = f"ICT子领域: {domain} | 术语: {term_count}个"
+            msg = f"ICT子领域: {domain} | 术语: {term_count}个 ({result.elapsed_seconds:.1f}s)"
             if pending:
-                msg += f"（其中{pending}个低置信度待确认）"
+                msg += f"（{pending}个待确认）"
             else:
-                msg += "（全部自动确认）"
+                msg += "（全部自动接受）"
             progress("pre_translate", StepState.COMPLETED, msg)
 
         except Exception as e:
@@ -150,31 +183,75 @@ class Orchestrator:
                  f"{len(session.pending_terms)}个术语需要确认")
 
         if on_terms_pending:
-            confirmed = on_terms_pending(session.pending_terms)
+            # 支持 async 与 sync 两种回调，签名统一为 (session, pending_terms)
+            confirmed = await self._invoke_terms_callback(on_terms_pending, session)
             if session.pre_translate_result and session.pre_translate_result.term_table:
+                tt = session.pre_translate_result.term_table
+                # 确认结果合并回术语表（按 term 去重：medium 术语已在 entries 中）
+                existing_idx = {e.term: i for i, e in enumerate(tt.entries)}
                 for term in confirmed:
                     term.source = "用户确认"
                     term.confidence = "high"
-                session.pre_translate_result.term_table.entries.extend(confirmed)
+                    if term.term in existing_idx:
+                        tt.entries[existing_idx[term.term]] = term
+                    else:
+                        tt.entries.append(term)
+                # 清空低置信度待确认列表（已合并进 entries，避免重复计数）
+                tt.pending_entries = []
             progress("terminology_confirm", StepState.COMPLETED,
                      f"用户确认{len(confirmed)}个术语")
         else:
             # Demo模式：自动接受低置信度术语
             if session.pre_translate_result and session.pre_translate_result.term_table:
+                tt = session.pre_translate_result.term_table
+                # 自动接受：合并去重（medium 术语可能已在 entries 中）
+                existing_idx = {e.term: i for i, e in enumerate(tt.entries)}
                 for term in session.pending_terms:
                     term.source = "自动接受"
-                session.pre_translate_result.term_table.entries.extend(session.pending_terms)
+                    if term.term in existing_idx:
+                        tt.entries[existing_idx[term.term]] = term
+                    else:
+                        tt.entries.append(term)
+                tt.pending_entries = []
             progress("terminology_confirm", StepState.COMPLETED,
                      f"自动接受{len(session.pending_terms)}个术语")
 
         session.pending_terms = []
 
+    @staticmethod
+    async def _invoke_terms_callback(cb, session):
+        """调用术语确认回调，兼容 async/sync 两种实现。"""
+        if asyncio.iscoroutinefunction(cb):
+            return await cb(session, session.pending_terms)
+        return cb(session, session.pending_terms)
+
+    @staticmethod
+    def _collect_pending_terms(term_table) -> list:
+        """
+        收集全部提取术语作为「待确认」列表（按 term 去重）。
+
+        需求：所有提取到的术语都要出现在确认环节，供用户确认/修改译法，
+        而不只是中低置信度术语。RAG命中/白名单的高置信度术语同样展示，
+        便于用户核对并沉淀为「用户确认」来源。
+        """
+        if not term_table:
+            return []
+        combined = list(term_table.pending_entries) + list(term_table.entries)
+        seen: set = set()
+        pending: list = []
+        for e in combined:
+            if e.term and e.term not in seen:
+                seen.add(e.term)
+                pending.append(e)
+        return pending
+
     # ── Step 3: 译中 ───────────────────────────────────────────────
 
     async def _step_translate(self, session: TranslationSession, progress):
         chunk_count = len(session.preprocess_result.chunks) if session.preprocess_result else 0
+        mode_label = "并行" if self.parallel_chunks and chunk_count > 1 else "串行"
         progress("translate", StepState.IN_PROGRESS,
-                 f"译中Sub-Agent工作中… ({chunk_count} chunk)")
+                 f"译中Sub-Agent工作中（{mode_label}·{chunk_count} chunk）…")
 
         # TM搜索
         tm_refs = []
@@ -186,15 +263,43 @@ class Orchestrator:
             pass
 
         try:
-            result = await spawn_translate(
-                session.preprocess_result.chunks,
-                session.pre_translate_result.term_table,
-                session.pre_translate_result.strategy_book,
-                tm_refs,
+            # D2：使用框架spawn包装，获得超时保护+计时
+            agent_ctx = AgentContext(
+                agent_name="TranslateAgent",
+                timeout_seconds=300.0,
+                parent_session_id=session.session_id,
             )
-            session.translate_result = result
-            cr = result.consistency_report
-            msg = f"初译完成: {len(result.draft)}字符"
+
+            if self.parallel_chunks and chunk_count > 1:
+                # 并行chunk翻译（D2新增能力·方向以策略书direction字段为准）
+                result: AgentResult = await spawn(
+                    spawn_translate_parallel,
+                    session.preprocess_result.chunks,
+                    session.pre_translate_result.term_table,
+                    session.pre_translate_result.strategy_book,
+                    tm_refs,
+                    max_concurrency=self.max_chunk_concurrency,
+                    parent_context=agent_ctx,
+                    context=agent_ctx,
+                )
+            else:
+                # 串行chunk翻译（传统模式）
+                result: AgentResult = await spawn(
+                    spawn_translate,
+                    session.preprocess_result.chunks,
+                    session.pre_translate_result.term_table,
+                    session.pre_translate_result.strategy_book,
+                    tm_refs,
+                    context=agent_ctx,
+                )
+
+            if not result.success:
+                raise RuntimeError(f"TranslateAgent failed: {result.error}")
+
+            session.translate_result = result.data
+            tr = result.data
+            cr = tr.consistency_report
+            msg = f"初译完成: {len(tr.draft)}字符 ({result.elapsed_seconds:.1f}s)"
             if cr:
                 if cr.precheck_passed:
                     msg += " | 一致性: 预检通过"
@@ -212,23 +317,38 @@ class Orchestrator:
     async def _step_post_translate(self, session: TranslationSession, progress):
         progress("post_translate", StepState.IN_PROGRESS, "译后Sub-Agent工作中（质检→润色）…")
 
+        # D2：使用框架spawn包装
+        agent_ctx = AgentContext(
+            agent_name="PostTranslateAgent",
+            timeout_seconds=180.0,
+            parent_session_id=session.session_id,
+        )
+
         try:
-            result = await spawn_post_translate(
+            result: AgentResult = await spawn(
+                spawn_post_translate,
                 session.preprocess_result.protected_md,
                 session.translate_result.draft,
                 session.pre_translate_result.term_table,
                 session.pre_translate_result.strategy_book,
+                context=agent_ctx,
             )
-            session.post_translate_result = result
 
-            if result.qa_report:
-                qa = result.qa_report
+            if not result.success:
+                raise RuntimeError(f"PostTranslateAgent failed: {result.error}")
+
+            session.post_translate_result = result.data
+            post_result = result.data
+
+            if post_result.qa_report:
+                qa = post_result.qa_report
                 progress("post_translate", StepState.COMPLETED,
-                         f"质检: {qa.total_score:.1f}分 | "
+                         f"质检: {qa.total_score:.1f}分 ({result.elapsed_seconds:.1f}s) | "
                          f"术语{qa.term_accuracy}·语义{qa.semantic_fidelity}·"
                          f"代码{qa.code_integrity}·流畅{qa.fluency}·风格{qa.style_match}")
             else:
-                progress("post_translate", StepState.COMPLETED, "译后完成")
+                progress("post_translate", StepState.COMPLETED,
+                         f"译后完成 ({result.elapsed_seconds:.1f}s)")
 
         except Exception as e:
             # 降级：交付初译稿
@@ -299,8 +419,8 @@ class Orchestrator:
                 for pair in session.aligned_pairs:
                     from transagent.interface import TMEntry
                     tm_entries.append(TMEntry(
-                        source_seg=pair.get("source_seg", ""),
-                        target_seg=pair.get("target_seg", ""),
+                        source_seg=pair.source_seg if hasattr(pair, 'source_seg') else pair.get("source_seg", ""),
+                        target_seg=pair.target_seg if hasattr(pair, 'target_seg') else pair.get("target_seg", ""),
                         quality_score=qa_score,
                         domain=domain,
                         user_id=self.user_id,

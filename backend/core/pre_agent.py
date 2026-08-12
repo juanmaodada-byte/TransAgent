@@ -1,130 +1,124 @@
 """
 译前Sub-Agent
 =============
-Vibe Coder A | v1.0 | 2026-08-06
+Vibe Coder A | v1.3 | 2026-08-10 (D5)
 
-职责：策略制定 + 术语提取（串行·策略先行）
-内部：2次LLM调用 + 知识库查询 + Web搜索
+职责：译前agent说明书 + 工作流协调（按工作流调用两个技能）
+内部：技能一·策略制定（LLM·先执行）→ 技能二·术语提取（LLM·后执行·多chunk分批全查→合并）
 
 输入：PreprocessResult + UserPrefs
 输出：PreTranslateResult（chunks + strategy_book + term_table）
+
+D2更新：继承BaseAgent框架，支持统一spawn/超时/取消/重试
+D3更新：策略/术语Prompt调优（few-shot示例·提取标准收紧·JSON约束强化）·方向感知
+D5更新（技能化重构）：
+  - 通用技能框架：core/skills/skill.py（Skill基类+登记处·说明书从skill.md运行时加载）
+  - 技能目录化：core/skills/<skill_dir>/（skill.md说明书 + reference/参考材料 + scripts/实现）
+  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
+  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
+  - 术语提取：单chunk读全文；多chunk分批全查（每chunk一次调用）→ 合并去重（首次译法优先）
+  - 翻译方向记录进策略书 direction 字段（策略技能从输入记录），术语技能以该字段路由方向
+  - RAG查证逻辑随技能迁入 term_extraction/scripts，仍按配置开关休眠（成员C完成后打开即接入）
+  - 结构解析/文档分块仍由主agent预处理完成（本模块不重复处理）
 """
 
-import json
 from transagent.interface import (
-    PreprocessResult, PreTranslateResult, TermTable, TermEntry,
-    StrategyBook, Chunk, UserPrefs, Confidence, TermAction, TermSource,
+    PreprocessResult, PreTranslateResult, TermTable, UserPrefs, TermSource,
 )
-from transagent.backend.core.llm_client import chat
-from transagent.backend.config import get_config
+from transagent.backend.core.agent_framework import (
+    BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
+)
+from transagent.backend.core.skills.pre_skills.strategy_formulation.scripts.strategy_skill import StrategySkill
+from transagent.backend.core.skills.pre_skills.term_extraction.scripts.term_skill import TermExtractionSkill
 
-# ── Prompt模板 ────────────────────────────────────────────────────
 
-STRATEGY_SYSTEM_PROMPT = """你是ICT领域资深技术翻译策略专家。你的任务是在翻译开始前，通读全文，制定翻译策略。
+# ══════════════════════════════════════════════════════════════════
+# 译前agent 系统提示词（注明两个技能 + 工作流）
+# ══════════════════════════════════════════════════════════════════
 
-## 分析维度
+PRE_AGENT_SYSTEM_PROMPT = """你是"译前Sub-Agent"——负责翻译开始前的全部准备工作。
+你收到的文档已经由上游主agent完成结构解析（不可译区域已用{NT_n}占位符保护、可译标签用{T_n}占位符）
+和文档分块，你直接基于处理后的文本工作。
 
-1. **ICT子领域识别**：识别文档所属的ICT子领域
-   - Kubernetes/云原生、Docker/容器、CI/CD、DevOps
-   - 网络安全、数据科学/ML、数据库、编程语言
-   - 分布式系统、微服务、监控/可观测性、网络/协议
-   - 前端开发、移动开发、IoT、其他
+你具备以下两项技能，系统按工作流调用；每次调用只会在本说明书之后追加一份技能说明书，
+你只需执行追加的那份技能对应的工作：
 
-2. **难度评级**：
-   - easy：纯技术文档（命令/配置为主），术语明确
-   - medium：技术博客/教程，含解释性文字和少量企业文化用语
-   - hard：技术白皮书/标准文档，含大量抽象概念
+【技能一：策略制定】（strategy_formulation）
+在翻译开始前分析文档：识别ICT子领域、评级难度、判断风格、确定直译/意译比例、明确目标读者。
+输出：翻译策略书（JSON·含ICT子领域标签）。
 
-3. **风格判断**：
-   - technical：严肃技术文档（API文档、配置指南）
-   - tutorial：教程/博客（有亲和力，可略微口语化）
-   - academic：学术/标准文档（严谨、正式）
+【技能二：术语提取】（term_extraction）
+从ICT文档中提取领域术语并确定目标语言译法，按置信度分流（正式术语/待确认）。
+输出：项目术语表（JSON）。
 
-4. **直译/意译比例**：0-1（0=全意译，1=全直译）
-5. **代码不译规则**：始终不翻译代码块、命令行、API名、文件路径
-6. **目标读者**：开发者/运维/SRE/架构师
+工作流程（固定顺序·不可颠倒）：
+1. 必须先执行技能一，拿到ICT子领域标签后，才能执行技能二。
+2. 技能二依赖技能一的产出：术语消歧必须结合领域标签
+   （如"container"在K8s→"容器"，在物流→"集装箱"）。
+3. 长文档（多chunk）时，技能二会按chunk分批执行（每次一个部分），由系统合并各批结果并去重。
 
-## 输出格式（JSON）
-
-{
-  "ict_domain": "Kubernetes/云原生",
-  "domain_confidence": "high",
-  "difficulty": "medium",
-  "style": "technical",
-  "literal_ratio": 0.6,
-  "target_audience": "开发者",
-  "rules": {
-    "code": "notranslate",
-    "tone": "professional",
-    "sentence_length": "medium",
-    "voice": "active"
-  },
-  "analysis_notes": "简要分析（1-2句）"
-}
+执行规则：
+- 每次调用只执行追加的那份技能说明书对应的工作，不得执行另一项技能。
+- 只输出该技能要求的JSON，不要输出其他内容，不要添加任何解释。
 """
 
-TERM_SYSTEM_PROMPT = """你是ICT领域资深术语专家。你的任务是从ICT文档中提取术语并确定译法。
 
-## 三级查证流程
-
-对每个候选术语，按优先级确定译法：
-1. **RAG命中** → 直接复用历史译法（confidence: high，source: "RAG命中"）
-2. **RAG未命中** → 搜索工具查证社区惯例 → 搜到引用的译法（confidence: medium，source: "Web搜索"）
-3. **搜索也找不到** → 根据你的训练数据生成译法（confidence: low，source: "LLM生成"）
-
-## ICT特殊规则
-
-- 技术缩写：首次出现给全称+缩写（如"持续集成/持续部署(CI/CD)"）
-- 中英混合术语：保留英文原词+中文释义（如"使用Kubernetes（K8s）集群"）
-- 裸API名/配置项：标记action="不译"（如kubectl、git clone、docker run）
-- "container"在K8s→"容器"，在物流→"集装箱"——领域标签消歧至关重要
-
-## 输出格式（JSON）
-
-{
-  "term_table": [
-    {
-      "term": "rolling update",
-      "translation": "滚动更新",
-      "domain": "Kubernetes/云原生",
-      "confidence": "high",
-      "action": "translate",
-      "source": "RAG命中"
-    }
-  ],
-  "pending_terms": [
-    {
-      "term": "GitOps pipeline",
-      "translation": "GitOps流水线",
-      "domain": "CI/CD",
-      "confidence": "low",
-      "action": "translate",
-      "source": "LLM生成"
-    }
-  ]
-}
-"""
-
+# ══════════════════════════════════════════════════════════════════
+# 工作流协调器（按工作流调用skill·代码固定顺序）
+# ══════════════════════════════════════════════════════════════════
 
 async def spawn_pre_translate(
     preprocess: PreprocessResult,
     user_prefs: UserPrefs,
+    direction: str = "auto",
 ) -> PreTranslateResult:
     """
-    译前Sub-Agent主入口。
+    译前Sub-Agent主入口（工作流协调器）。
 
-    执行顺序：策略制定（LLM）→ 术语提取（LLM·含RAG+Web搜索+LLM三级查证）
+    执行顺序（写死在代码里，AI不能跳步）：
+      1. 技能一·策略制定（先执行·产出领域标签）
+      2. 技能二·术语提取（后执行·携带领域标签消歧）
+         单chunk → 一次读全文；多chunk → 每chunk一次调用（分批全查）→ 合并去重
+
+    Args:
+        direction: "en_to_zh" | "zh_to_en" | "auto"（默认·按文档语言自动检测）
     """
-    cfg = get_config().pipeline
     full_text = preprocess.protected_md
+    chunks = preprocess.chunks
 
-    # ── Step 1: 策略制定（LLM·先执行）──
-    strategy_book = await _formulate_strategy(full_text, user_prefs, cfg)
+    # ── 方向解析（auto → 语言检测）──
+    if direction == "auto":
+        direction = _detect_direction(full_text)
+        print(f"[PreAgent] 方向自动检测: {direction}")
 
-    # ── Step 2: 术语提取（LLM·后执行·携带领域标签消歧）──
-    term_table = await _extract_terms(
-        full_text, preprocess.chunks, strategy_book, user_prefs, cfg
+    # 技能实例化时注入agent说明书（技能不反向依赖agent模块·解耦）
+    strategy_skill = StrategySkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
+    term_skill = TermExtractionSkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
+
+    # ── 步骤1：调用技能一（策略制定·翻译方向随策略书记录）──
+    strategy_book = await strategy_skill.execute(
+        md_text=full_text, user_prefs=user_prefs, direction=direction,
     )
+
+    # ── 步骤2：调用技能二（术语提取·分批全查·方向以策略书direction字段为准）──
+    batches: list[TermTable] = []
+    if len(chunks) <= 1:
+        print("[PreAgent] 单chunk → 技能二一次读全文")
+        batches.append(await term_skill.execute(
+            fragment=full_text, strategy=strategy_book,
+            user_prefs=user_prefs, part_label="全文",
+        ))
+    else:
+        n = len(chunks)
+        print(f"[PreAgent] 多chunk({n}) → 技能二分批全查，每chunk一次调用")
+        for i, chunk in enumerate(chunks):
+            batches.append(await term_skill.execute(
+                fragment=chunk.source_text, strategy=strategy_book,
+                user_prefs=user_prefs,
+                part_label=f"第{i + 1}/{n}部分",
+            ))
+
+    term_table = _merge_batches(batches)
 
     return PreTranslateResult(
         chunks=preprocess.chunks,
@@ -134,141 +128,79 @@ async def spawn_pre_translate(
     )
 
 
-async def _formulate_strategy(
-    md_text: str, user_prefs: UserPrefs, cfg
-) -> StrategyBook:
-    """策略制定 LLM调用"""
-    user_context = f"""
-用户偏好：
-- 默认风格：{user_prefs.default_style}
-- 常用领域：{', '.join(user_prefs.domain_tags) if user_prefs.domain_tags else '无'}
-- 直译/意译比例倾向：{user_prefs.literal_ratio}
-"""
-
-    user_message = f"{user_context}\n\n待分析文档（前3000字）：\n{md_text[:3000]}"
-
-    try:
-        result = await chat(
-            STRATEGY_SYSTEM_PROMPT, user_message,
-            temperature=cfg.strategy_temperature,
-            max_tokens=cfg.strategy_max_tokens,
-            json_mode=True,
-        )
-        # result 已经是dict（因为json_mode=True）
-        if isinstance(result, dict):
-            return StrategyBook(
-                ict_domain=result.get("ict_domain", ""),
-                domain_confidence=result.get("domain_confidence", "medium"),
-                difficulty=result.get("difficulty", "medium"),
-                style=result.get("style", "technical"),
-                literal_ratio=float(result.get("literal_ratio", 0.6)),
-                target_audience=result.get("target_audience", "开发者"),
-                rules=result.get("rules", {"code": "notranslate", "tone": "professional"}),
-            )
-    except Exception as e:
-        print(f"[PreAgent] 策略制定失败，使用默认策略: {e}")
-
-    # 降级：默认策略
-    return StrategyBook()
-
-
-async def _extract_terms(
-    md_text: str, chunks: list[Chunk], strategy: StrategyBook,
-    user_prefs: UserPrefs, cfg
-) -> TermTable:
+def _merge_batches(batches: list[TermTable]) -> TermTable:
     """
-    术语提取 LLM调用（含RAG查询+Web搜索）。
+    合并各批术语表：去重（首次译法优先）+ 统计。
 
-    流程：LLM提取候选术语 → 每个候选查RAG（携带领域标签）→ RAG未命中则Web搜索 → 都未命中则LLM生成
+    跨批去重规则：以"先到先得"为准——同一术语在批次1出现后，
+    批次2/3中的同术语（即使译法不同）直接丢弃。
     """
-    from transagent.backend.knowledge.rag_terms import search_rag
+    merged = TermTable()
+    seen: set[str] = set()
+    for b in batches:
+        for e in b.entries:
+            if e.term and e.term not in seen:
+                seen.add(e.term)
+                merged.entries.append(e)
+        for e in b.pending_entries:
+            if e.term and e.term not in seen:
+                seen.add(e.term)
+                merged.pending_entries.append(e)
 
-    domain_label = strategy.ict_domain
-    user_id = user_prefs.user_id
+    merged.total_count = len(merged.entries) + len(merged.pending_entries)
+    merged.rag_hit_count = sum(b.rag_hit_count for b in batches)
+    merged.web_search_count = sum(b.web_search_count for b in batches)
+    merged.llm_gen_count = sum(
+        1 for e in (merged.entries + merged.pending_entries)
+        if e.source == TermSource.LLM_GEN.value
+    )
+    return merged
 
-    term_context = f"""
-ICT子领域：{domain_label}
 
-待提取术语的文档（前3000字）：
-{md_text[:3000]}
-"""
+def _detect_direction(md_text: str) -> str:
+    """简单语言检测：CJK字符占比 >20% → zh_to_en，否则 en_to_zh。"""
+    cjk = sum(1 for ch in md_text if "一" <= ch <= "鿿")
+    total = len(md_text.strip())
+    if total == 0:
+        return "en_to_zh"
+    return "zh_to_en" if cjk / total > 0.2 else "en_to_zh"
 
-    term_table = TermTable()
 
-    try:
-        result = await chat(
-            TERM_SYSTEM_PROMPT, term_context,
-            temperature=cfg.term_extraction_temperature,
-            max_tokens=cfg.term_extraction_max_tokens,
-            json_mode=True,
+# ══════════════════════════════════════════════════════════════════
+# BaseAgent 封装（D2新增·D5保持）
+# ══════════════════════════════════════════════════════════════════
+
+@register_agent
+class PreTranslateAgent(BaseAgent):
+    """
+    译前Sub-Agent（BaseAgent封装）。
+
+    使用方式：
+        # 方式1：直接调用静态 spawn 函数（向后兼容）
+        result = await spawn_pre_translate(preprocess, user_prefs)
+
+        # 方式2：通过 BaseAgent.run()（统一框架）
+        agent = PreTranslateAgent(context=AgentContext.simple("PreAgent", timeout=180))
+        result = await agent.run(preprocess, user_prefs)
+        if result.success:
+            pre_result = result.data  # PreTranslateResult
+
+        # 方式3：通过注册中心
+        agent = AgentRegistry.create("PreTranslateAgent")
+    """
+
+    @property
+    def agent_name(self) -> str:
+        return "PreTranslateAgent"
+
+    def default_context(self) -> AgentContext:
+        return AgentContext(
+            agent_name=self.agent_name,
+            timeout_seconds=180.0,  # 策略+术语两次LLM调用，给3分钟
         )
 
-        if isinstance(result, dict):
-            raw_terms = result.get("term_table", [])
-            raw_pending = result.get("pending_terms", [])
-
-            # 对每个提取的术语查RAG（携带领域标签消歧）
-            all_terms = []
-            for t in raw_terms:
-                term_text = t.get("term", "")
-                # 查RAG语义检索
-                rag_results = search_rag(term_text, user_id, domain_label)
-                if rag_results:
-                    # RAG命中 → 高置信度复用
-                    best = rag_results[0]
-                    all_terms.append(TermEntry(
-                        term=term_text,
-                        translation=best.translation,
-                        domain=domain_label,
-                        confidence=Confidence.HIGH.value,
-                        action=best.action,
-                        source=TermSource.RAG_HIT.value,
-                        user_id=user_id,
-                    ))
-                    term_table.rag_hit_count += 1
-                else:
-                    # RAG未命中 → 检查confidence
-                    confidence = t.get("confidence", "medium")
-                    if confidence in ("low",):
-                        # 低置信度 → 待用户确认
-                        term_table.pending_entries.append(TermEntry(
-                            term=term_text,
-                            translation=t.get("translation", ""),
-                            domain=domain_label,
-                            confidence=Confidence.LOW.value,
-                            action=t.get("action", "translate"),
-                            source=t.get("source", TermSource.LLM_GEN.value),
-                            user_id=user_id,
-                        ))
-                    else:
-                        all_terms.append(TermEntry(
-                            term=term_text,
-                            translation=t.get("translation", ""),
-                            domain=domain_label,
-                            confidence=confidence,
-                            action=t.get("action", "translate"),
-                            source=t.get("source", TermSource.WEB_SEARCH.value),
-                            user_id=user_id,
-                        ))
-                        term_table.web_search_count += 1
-
-            # 处理pending中的术语
-            for t in raw_pending:
-                term_table.pending_entries.append(TermEntry(
-                    term=t.get("term", ""),
-                    translation=t.get("translation", ""),
-                    domain=domain_label,
-                    confidence=Confidence.LOW.value,
-                    action=t.get("action", "translate"),
-                    source=TermSource.LLM_GEN.value,
-                    user_id=user_id,
-                ))
-                term_table.llm_gen_count += 1
-
-            term_table.entries = all_terms
-            term_table.total_count = len(all_terms) + len(term_table.pending_entries)
-
-    except Exception as e:
-        print(f"[PreAgent] 术语提取失败: {e}")
-
-    return term_table
+    async def execute(
+        self, preprocess: PreprocessResult, user_prefs: UserPrefs
+    ) -> PreTranslateResult:
+        """执行译前流程：策略制定 → 术语提取"""
+        return await spawn_pre_translate(preprocess, user_prefs)

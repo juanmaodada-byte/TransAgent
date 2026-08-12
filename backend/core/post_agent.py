@@ -1,166 +1,101 @@
 """
 译后Sub-Agent
 =============
-Vibe Coder A | v1.0 | 2026-08-06
+Vibe Coder A | v1.2 | 2026-08-10 (D5)
 
-职责：ICT专项质检 + 润色（含校对）
-内部：2次LLM调用（串行·质检先行→润色后行）
+职责：译后agent说明书 + 工作流协调（按工作流调用两个技能）
+内部：技能一·质检（LLM·先执行）→ 技能二·润色（LLM·后执行·含校对）
 
 输入：source_md + draft + term_table + strategy_book
 输出：PostTranslateResult（终稿 + 质检报告 + 润色说明）
+
+D2更新：继承BaseAgent框架，支持统一spawn/超时/取消/重试
+D5更新（技能化重构·目录化）：
+  - 技能目录化：core/skills/quality_inspection/（技能一·质检）、core/skills/polish/（技能二·润色）
+    —— 各含 skill.md（说明书·双方向章节合一）+ reference/ + scripts/
+  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
+  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
+  - 翻译方向以策略书 direction 字段为准；direction参数降为兼容兜底（策略书未记录时用）
 """
 
-import json
 from transagent.interface import (
-    TermTable, StrategyBook, PostTranslateResult, QAResult, QAIssue,
+    TermTable, StrategyBook, PostTranslateResult,
 )
-from transagent.backend.core.llm_client import chat
-from transagent.backend.config import get_config
+from transagent.backend.core.agent_framework import (
+    BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
+)
+from transagent.backend.core.skills.post_skills.quality_inspection.scripts.quality_skill import QualityInspectionSkill
+from transagent.backend.core.skills.post_skills.polish.scripts.polish_skill import PolishSkill
 
-# ── Prompt模板 ────────────────────────────────────────────────────
 
-QA_EN_ZH_PROMPT = """你是ICT翻译质量审核专家。你的任务是对比源文和译文，按ICT专项6维标准评分并定位问题。
+# ══════════════════════════════════════════════════════════════════
+# 译后agent 系统提示词（注明两个技能 + 工作流）
+# ══════════════════════════════════════════════════════════════════
 
-## ICT专项质检维度
+POST_AGENT_SYSTEM_PROMPT = """你是"译后Sub-Agent"——负责翻译完成后的质量把关。
+你收到的材料：源文、初译稿、项目术语表、翻译策略书。
 
-| 维度 | 权重 | 检查要点 |
-|------|------|---------|
-| 术语准确性 | 30% | 术语是否按术语表使用·缩写首次出现给全称·ICT术语无错译 |
-| 语义忠实度 | 30% | 源文语义完整传达·无漏译·无增译·无曲解 |
-| 代码/参数完整性 | 15% | {NT_n}占位符完整保留·代码块未被动·不可译区域未被误译 |
-| 流畅性 | 15% | 中文自然·无翻译腔·句子长度适中·主动语态 |
-| 风格匹配 | 10% | 符合ICT文档风格（专业·简洁·主动语态·避免"您"） |
+你具备以下两项技能，系统按工作流调用；每次调用只会在本说明书之后追加一份技能说明书，
+你只需执行追加的那份技能对应的工作：
 
-## 评分标准
-- 10分：专业译员水准，无任何问题
-- 9-9.5：极高质量，仅1-2处微瑕
-- 8-8.5：良好，术语准确但流畅性可提升
-- 7-7.5：基本可读但需要润色
-- <7：存在较多问题
+【技能一：质检】（quality_inspection）
+对比源文和译文，按ICT专项5维标准（术语/语义/代码完整性/流畅性/风格）评分并定位问题。
+输出：质检报告（JSON·5维评分+问题列表）。
 
-## 输出格式（JSON）
+【技能二：润色】（polish）
+根据质检报告修复问题，消除翻译腔，提升母语自然度，输出终稿。
+输出：润色后的完整译文（MD文本）。
 
-{
-  "total_score": 9.1,
-  "term_accuracy": 9.5,
-  "semantic_fidelity": 9.2,
-  "code_integrity": 10.0,
-  "fluency": 8.5,
-  "style_match": 8.8,
-  "issues": [
-    {
-      "location": "段落3·第2句",
-      "severity": "minor",
-      "type": "翻译腔",
-      "description": ""被部署到集群中" → 建议改为 "部署到集群中""
-    }
-  ],
-  "summary": "术语准确·代码完整·2处翻译腔可优化"
-}
+工作流程（固定顺序·由系统编排）：
+1. 先执行技能一（质检），拿到质检报告。
+2. 再执行技能二（润色），根据质检报告修复+润色（含校对·一次完成）。
+3. 翻译方向以策略书中的"翻译方向"字段为准；{NT_n}/{T_n}占位符原样保留。
+
+执行规则：
+- 每次调用只执行追加的那份技能说明书对应的工作，不得执行另一项技能。
+- 技能一输出质检报告JSON；技能二输出润色后的完整译文。不要添加解释。
 """
 
-QA_ZH_EN_PROMPT = """You are an ICT translation quality reviewer. Your task is to compare the source (Chinese) with the translation (English) and score it across 5 dimensions, flagging any issues.
 
-## QA Dimensions
-
-| Dimension | Weight | Checkpoints |
-|-----------|--------|-------------|
-| Term Accuracy | 30% | Glossary terms used correctly; ICT abbreviations preserved; no mistranslation of technical terms |
-| Semantic Fidelity | 30% | Full meaning conveyed; no omissions, additions, or distortions |
-| Code/Param Integrity | 15% | {NT_n} placeholders intact; code blocks unmodified; untranslatable regions preserved |
-| Fluency | 15% | Natural English; no Chinglish; appropriate sentence length; active voice |
-| Style Match | 10% | ICT documentation style (professional, concise, no fluff) |
-
-## Scoring
-- 10: Professional translator quality
-- 9-9.5: Excellent, 1-2 minor issues
-- 8-8.5: Good, term accuracy solid but fluency could improve
-- 7-7.5: Readable but needs polish
-- <7: Significant issues
-
-## Output format (JSON)
-
-{
-  "total_score": 9.1,
-  "term_accuracy": 9.5,
-  "semantic_fidelity": 9.2,
-  "code_integrity": 10.0,
-  "fluency": 8.5,
-  "style_match": 8.8,
-  "issues": [
-    {
-      "location": "para 1, sentence 2",
-      "severity": "minor",
-      "type": "Chinglish",
-      "description": "awkward phrasing, suggested rewrite"
-    }
-  ],
-  "summary": "Accurate terms, code intact, 2 fluency issues to polish"
-}
-"""
-
-POLISH_EN_ZH_PROMPT = """你是ICT领域资深中文技术编辑。你的任务是根据质检报告修复问题，并提升译文的中文自然度。
-
-## 修复原则
-
-1. **修复质检问题**：逐条处理质检报告中标记的问题
-2. **消除翻译腔**：
-   - 被动句 → 主动句（"被部署" → "部署"；"被调用" → "调用"）
-   - "的"字滥用 → 精简（"集群的状态" → "集群状态"）
-   - 英文长句 → 中文短句（逗号拆分）
-   - "进行"、"一个"等冗余词 → 删除
-3. **提升母语自然度**：读起来像中文母语者写的技术文档
-4. **不改语义**：只优化表达，不改变原文意思
-5. **不改占位符**：{NT_n} 原样保留
-
-## 输出
-
-直接输出润色后的完整译文。不要添加解释、不要添加前缀。
-"""
-
-POLISH_ZH_EN_PROMPT = """You are a senior English technical editor specializing in ICT content. Your task is to fix issues flagged in the QA report and polish the translation to native-level English.
-
-## Polish Principles
-
-1. **Fix QA issues**: Address every issue flagged in the QA report
-2. **Eliminate Chinglish**:
-   - Overly literal translations → natural English phrasing
-   - Run-on sentences → split into clear, concise sentences
-   - Redundant words ("for the purpose of", "in order to") → simplify
-   - Passive constructions where active would be clearer
-3. **Native-level fluency**: Should read like it was originally written in English by an ICT professional
-4. **Preserve meaning**: Only improve expression; do not alter the original meaning
-5. **Preserve placeholders**: {NT_n} must stay as-is
-
-## Output
-
-Output the polished translation directly. No explanations, no prefixes.
-"""
-
+# ══════════════════════════════════════════════════════════════════
+# 工作流协调器（按工作流调用skill·代码固定顺序）
+# ══════════════════════════════════════════════════════════════════
 
 async def spawn_post_translate(
     source_md: str,
     draft: str,
     term_table: TermTable,
     strategy_book: StrategyBook,
-    direction: str = "en_to_zh",
+    direction: str = "",
 ) -> PostTranslateResult:
     """
-    译后Sub-Agent主入口。
+    译后Sub-Agent主入口（工作流协调器）。
 
-    执行顺序：质检（LLM）→ 润色（LLM·根据质检报告修复+润色）
+    执行顺序（写死在代码里，AI不能跳步）：
+      1. 技能一·质检（先执行·产出质检报告）
+      2. 技能二·润色（后执行·根据质检报告修复+润色）
 
     Args:
-        direction: "en_to_zh" (默认) 或 "zh_to_en"
+        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
+                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
     """
-    cfg = get_config().pipeline
+    # 方向单一事实来源=策略书：未记录时用调用参数兜底
+    if not strategy_book.direction:
+        strategy_book.direction = direction or "en_to_zh"
 
-    # ── Step 1: 质检（LLM）──
-    qa_result = await _inspect_quality(source_md, draft, term_table, strategy_book, cfg, direction)
+    qa_skill = QualityInspectionSkill(agent_prompt=POST_AGENT_SYSTEM_PROMPT)
+    polish_skill = PolishSkill(agent_prompt=POST_AGENT_SYSTEM_PROMPT)
 
-    # ── Step 2: 润色（LLM·含校对）──
-    final_text, polish_notes = await _polish(
-        source_md, draft, qa_result, term_table, strategy_book, cfg, direction
+    # ── Step 1: 调用技能一（质检）──
+    qa_result = await qa_skill.execute(
+        source_md=source_md, draft=draft,
+        term_table=term_table, strategy_book=strategy_book,
+    )
+
+    # ── Step 2: 调用技能二（润色·含校对）──
+    final_text, polish_notes = await polish_skill.execute(
+        source_md=source_md, draft=draft,
+        qa_result=qa_result, strategy_book=strategy_book,
     )
 
     return PostTranslateResult(
@@ -170,151 +105,48 @@ async def spawn_post_translate(
     )
 
 
-async def _inspect_quality(
-    source_md: str, draft: str, term_table: TermTable,
-    strategy_book: StrategyBook, cfg, direction: str = "en_to_zh",
-) -> QAResult:
-    """质检 LLM调用"""
+# ══════════════════════════════════════════════════════════════════
+# BaseAgent 封装（D2新增·D5保持）
+# ══════════════════════════════════════════════════════════════════
 
-    if direction == "zh_to_en":
-        qa_prompt_template = QA_ZH_EN_PROMPT
-        term_label = "## Project Glossary"
-        source_label = "## Source (first 3000 chars)"
-        target_label = "## Translation"
-        no_glossary = "(no glossary)"
-        domain_label = "ICT Domain"
-        style_label = "Target Style"
-    else:
-        qa_prompt_template = QA_EN_ZH_PROMPT
-        term_label = "## 项目术语表"
-        source_label = "## 源文（前3000字）"
-        target_label = "## 译文"
-        no_glossary = "（无术语表）"
-        domain_label = "ICT子领域"
-        style_label = "目标风格"
+@register_agent
+class PostTranslateAgent(BaseAgent):
+    """
+    译后Sub-Agent（BaseAgent封装）。
 
-    term_context = "\n".join([
-        f"- {e.term} → {e.translation} {'【不译】' if e.action == 'notranslate' else ''}"
-        for e in term_table.entries[:15]
-    ]) if term_table.entries else no_glossary
+    使用方式：
+        # 方式1：直接调用静态 spawn 函数（向后兼容）
+        result = await spawn_post_translate(source_md, draft, term_table, strategy_book)
 
-    qa_prompt = f"""
-{domain_label}：{strategy_book.ict_domain}
-{style_label}：{strategy_book.style}
+        # 方式2：通过 BaseAgent.run()（统一框架）
+        agent = PostTranslateAgent(context=AgentContext.simple("PostAgent", timeout=180))
+        result = await agent.run(source_md, draft, term_table, strategy_book)
+        if result.success:
+            post_result = result.data  # PostTranslateResult
 
-{term_label}
-{term_context}
+        # 方式3：通过注册中心
+        agent = AgentRegistry.create("PostTranslateAgent")
+    """
 
-{source_label}
-{source_md[:3000]}
+    @property
+    def agent_name(self) -> str:
+        return "PostTranslateAgent"
 
-{target_label}
-{draft[:4000]}
-"""
-    try:
-        result = await chat(
-            qa_prompt_template, qa_prompt,
-            temperature=cfg.qa_temperature,
-            max_tokens=cfg.qa_max_tokens,
-            json_mode=True,
+    def default_context(self) -> AgentContext:
+        return AgentContext(
+            agent_name=self.agent_name,
+            timeout_seconds=180.0,  # 质检+润色两次LLM调用，给3分钟
         )
 
-        if isinstance(result, dict):
-            issues = []
-            for iss in result.get("issues", []):
-                issues.append(QAIssue(
-                    location=iss.get("location", ""),
-                    severity=iss.get("severity", "minor"),
-                    type=iss.get("type", ""),
-                    description=iss.get("description", ""),
-                ))
-
-            return QAResult(
-                total_score=float(result.get("total_score", 8.0)),
-                term_accuracy=float(result.get("term_accuracy", 8.0)),
-                semantic_fidelity=float(result.get("semantic_fidelity", 8.0)),
-                code_integrity=float(result.get("code_integrity", 8.0)),
-                fluency=float(result.get("fluency", 8.0)),
-                style_match=float(result.get("style_match", 8.0)),
-                issues=issues,
-                summary=result.get("summary", ""),
-            )
-    except Exception as e:
-        print(f"[PostAgent] 质检失败: {e}")
-
-    # 降级：默认质检
-    return QAResult(total_score=8.0, summary="质检降级·使用基础评分")
-
-
-async def _polish(
-    source_md: str, draft: str, qa_result: QAResult,
-    term_table: TermTable, strategy_book: StrategyBook, cfg, direction: str = "en_to_zh",
-) -> tuple[str, str]:
-    """润色 LLM调用（含校对）"""
-
-    if direction == "zh_to_en":
-        polish_prompt_template = POLISH_ZH_EN_PROMPT
-        domain_label = "ICT Domain"
-        style_label = "Target Style"
-        report_label = "QA Report"
-        draft_label = "## Draft Translation"
-        source_label = "## Source Reference (first 2000 chars, for semantic verification only)"
-        fallback_msg = "Polish failed; delivering draft"
-    else:
-        polish_prompt_template = POLISH_EN_ZH_PROMPT
-        domain_label = "ICT子领域"
-        style_label = "目标风格"
-        report_label = "## 质检报告（总分{qa_result.total_score}）"
-        draft_label = "## 初译稿"
-        source_label = "## 源文参考（前2000字·仅作语义核对）"
-        fallback_msg = "润色失败·交付初译稿"
-
-    issues_text = "\n".join([
-        f"- [{i.severity}] {i.location}: {i.type} - {i.description}"
-        for i in qa_result.issues
-    ]) if qa_result.issues else "（无具体问题）" if direction == "en_to_zh" else "(no specific issues)"
-
-    qa_report_text = f"QA Report (total score {qa_result.total_score})" if direction == "zh_to_en" else f"质检报告（总分{qa_result.total_score}）"
-
-    polish_prompt = f"""
-{domain_label}：{strategy_book.ict_domain}
-{style_label}：{strategy_book.style}
-
-## {qa_report_text}
-- Term Accuracy: {qa_result.term_accuracy}
-- Semantic Fidelity: {qa_result.semantic_fidelity}
-- Code Integrity: {qa_result.code_integrity}
-- Fluency: {qa_result.fluency}
-- Style Match: {qa_result.style_match}
-
-## Issues to Fix
-{issues_text}
-
-{draft_label}
-{draft}
-
-{source_label}
-{source_md[:2000]}
-"""
-    try:
-        final_text = await chat(
-            polish_prompt_template, polish_prompt,
-            temperature=cfg.polish_temperature,
-            max_tokens=cfg.polish_max_tokens,
+    async def execute(
+        self,
+        source_md: str,
+        draft: str,
+        term_table: TermTable,
+        strategy_book: StrategyBook,
+        direction: str = "",
+    ) -> PostTranslateResult:
+        """执行译后流程：质检 → 润色"""
+        return await spawn_post_translate(
+            source_md, draft, term_table, strategy_book, direction
         )
-        final = final_text if isinstance(final_text, str) else str(final_text)
-
-        # 生成润色说明
-        issue_count = len(qa_result.issues) if qa_result.issues else 0
-        if qa_result.total_score >= 9.5:
-            polish_notes = "初译质量极高，仅做微调" if direction == "en_to_zh" else "Draft quality excellent, minimal touch-up"
-        elif issue_count == 0:
-            polish_notes = "消除翻译腔·提升自然度" if direction == "en_to_zh" else "Reduced awkward phrasing, improved fluency"
-        else:
-            polish_notes = f"修复{issue_count}个问题·消除翻译腔·提升自然度" if direction == "en_to_zh" else f"Fixed {issue_count} issues, improved fluency"
-
-        return final, polish_notes
-
-    except Exception as e:
-        print(f"[PostAgent] 润色失败，返回初译稿: {e}")
-        return draft, f"{fallback_msg}: {e}"

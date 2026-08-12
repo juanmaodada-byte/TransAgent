@@ -1,0 +1,11 @@
+term,translation,domain,action,confidence
+Generative Adversarial Network (GAN),生成对抗网络,data_ml,translate,high
+Transfer Learning,迁移学习,data_ml,translate,high
+Signature Verification,签名验证,security,translate,high
+Handwritten Signature,手写签名,security,translate,high
+Customer Relationship Management (CRM),客户关系管理,,translate,high
+Enterprise Resource Planning (ERP),企业资源规划,,translate,high
+Amazon Web Services (AWS),亚马逊云服务,cloud,translate,high
+Google Cloud Platform (GCP),谷歌云平台,cloud,translate,high
+HIPAA,健康保险流通与责任法案,security,translate,high
+Software-Defined Wide Area Network (SD-WAN),软件定义广域网,network,translate,high

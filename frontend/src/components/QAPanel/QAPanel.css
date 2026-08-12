@@ -1,0 +1,232 @@
+/* ══════════════════════════════════════════════════════════════════
+   QAPanel 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.qa-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── 头部 ── */
+.qa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.qa-total {
+  display: flex;
+  flex-direction: column;
+}
+
+.qa-total-score {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.qa-total-label {
+  font-size: 0.8rem;
+  color: var(--color-gray-500);
+  margin-top: 2px;
+}
+
+.qa-level-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.qa-level {
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.qa-issue-count {
+  font-size: 0.78rem;
+  color: var(--color-gray-500);
+}
+
+/* ── 分数等级颜色 ── */
+.level-excellent { color: #15803d; }
+.level-good { color: #16a34a; }
+.level-medium { color: #ca8a04; }
+.level-pass { color: #d97706; }
+.level-poor { color: #dc2626; }
+
+.qa-level.level-excellent { background: var(--color-success-light); }
+.qa-level.level-good { background: var(--color-success-light); }
+.qa-level.level-medium { background: var(--color-warning-light); }
+.qa-level.level-pass { background: var(--color-warning-light); }
+.qa-level.level-poor { background: var(--color-error-light); }
+
+/* ── 子维度 ── */
+.qa-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qa-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qa-dim-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.qa-dim-label {
+  color: var(--color-gray-600);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qa-dim-weight {
+  font-size: 0.7rem;
+  color: var(--color-gray-400);
+  font-family: var(--font-mono);
+}
+
+.qa-dim-value {
+  font-weight: 600;
+  color: var(--color-gray-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.qa-dim-track {
+  height: 6px;
+  background: var(--color-gray-100);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.qa-dim-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease;
+}
+
+.qa-dim-fill.level-excellent { background: #22c55e; }
+.qa-dim-fill.level-good { background: #4ade80; }
+.qa-dim-fill.level-medium { background: #eab308; }
+.qa-dim-fill.level-pass { background: #f59e0b; }
+.qa-dim-fill.level-poor { background: #ef4444; }
+
+/* ── 问题列表 ── */
+.qa-issues-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin-bottom: 8px;
+}
+
+.qa-issues {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qa-issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-gray-50);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-gray-300);
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.qa-issue-item.sev-critical {
+  border-left-color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+.qa-issue-item.sev-major {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-light);
+}
+
+.qa-issue-item.sev-minor {
+  border-left-color: var(--color-gray-300);
+}
+
+.qa-severity {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.qa-severity.sev-critical { background: var(--color-error); color: #fff; }
+.qa-severity.sev-major { background: var(--color-warning); color: #fff; }
+.qa-severity.sev-minor { background: var(--color-gray-300); color: var(--color-gray-600); }
+
+.qa-issue-type {
+  color: var(--color-gray-700);
+  font-weight: 500;
+  min-width: 56px;
+  flex-shrink: 0;
+}
+
+.qa-issue-desc {
+  color: var(--color-gray-600);
+  flex: 1;
+  min-width: 120px;
+}
+
+.qa-issue-location {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* ── 总结 ── */
+.qa-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--color-primary-light);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  color: var(--color-gray-700);
+  line-height: 1.6;
+}
+
+.qa-summary-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.qa-summary p {
+  margin: 0;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .qa-total-score {
+    font-size: 2.2rem;
+  }
+
+  .qa-level-badge {
+    align-items: flex-end;
+  }
+}

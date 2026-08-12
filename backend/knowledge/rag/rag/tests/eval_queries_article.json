@@ -1,0 +1,405 @@
+[
+  {
+    "query": "ICT",
+    "expected": "Information and Communications Technology (ICT)",
+    "translation": "信息与通信技术",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Information and Communications Technology",
+    "expected": "Information and Communications Technology (ICT)",
+    "translation": "信息与通信技术",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Gateway",
+    "expected": "Gateway",
+    "translation": "网关",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "QoS",
+    "expected": "Quality of Service (QoS)",
+    "translation": "服务质量",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Cloud Computing",
+    "expected": "Cloud Computing",
+    "translation": "云计算",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Public Cloud",
+    "expected": "Public Cloud",
+    "translation": "公有云",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Multi-Cloud",
+    "expected": "Multi-Cloud",
+    "translation": "多云",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Serverless Computing",
+    "expected": "Serverless Computing",
+    "translation": "无服务器计算",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Edge Computing",
+    "expected": "Edge Computing",
+    "translation": "边缘计算",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Scalability",
+    "expected": "Scalability",
+    "translation": "可扩展性",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Big Data",
+    "expected": "Big Data",
+    "translation": "大数据",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Data Mining",
+    "expected": "Data Mining",
+    "translation": "数据挖掘",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Data Analytics",
+    "expected": "Data Analytics",
+    "translation": "数据分析",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "AI",
+    "expected": "Artificial Intelligence (AI)",
+    "translation": "人工智能",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Artificial Intelligence",
+    "expected": "Artificial Intelligence (AI)",
+    "translation": "人工智能",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "ML",
+    "expected": "Machine Learning (ML)",
+    "translation": "机器学习",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Machine Learning",
+    "expected": "Machine Learning (ML)",
+    "translation": "机器学习",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Deep Learning",
+    "expected": "Deep Learning (DL)",
+    "translation": "深度学习",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Computer Vision",
+    "expected": "Computer Vision (CV)",
+    "translation": "计算机视觉",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Supervised Learning",
+    "expected": "Supervised Learning",
+    "translation": "监督学习",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "CNN",
+    "expected": "Convolutional Neural Network (CNN)",
+    "translation": "卷积神经网络",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Convolutional Neural Network",
+    "expected": "Convolutional Neural Network (CNN)",
+    "translation": "卷积神经网络",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Intrusion Detection System",
+    "expected": "Intrusion Detection System (IDS)",
+    "translation": "入侵检测系统",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "IoT",
+    "expected": "Internet of Things (IoT)",
+    "translation": "物联网",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Sensor",
+    "expected": "Sensor",
+    "translation": "传感器",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "RFID",
+    "expected": "Radio Frequency Identification (RFID)",
+    "translation": "射频识别技术",
+    "kind": "缩写",
+    "note": "文章表面形式-缩写"
+  },
+  {
+    "query": "Cyber-Physical Systems",
+    "expected": "Cyber-Physical Systems (CPS)",
+    "translation": "信息物理系统",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Disaster Recovery",
+    "expected": "Disaster Recovery (DR)",
+    "translation": "灾难恢复",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "Compliance",
+    "expected": "Compliance",
+    "translation": "合规性",
+    "kind": "全称",
+    "note": "文章表面形式-全称"
+  },
+  {
+    "query": "artificial intelligence techniques",
+    "expected": "Artificial Intelligence (AI)",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "machine learning methods",
+    "expected": "Machine Learning (ML)",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "deep neural networks",
+    "expected": "Deep Learning (DL)",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "cloud infrastructure",
+    "expected": "Cloud Computing",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "cloud services",
+    "expected": "Cloud Computing",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "internet of things devices",
+    "expected": "Internet of Things (IoT)",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "edge nodes",
+    "expected": "Edge Computing",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "intrusion detection",
+    "expected": "Intrusion Detection System (IDS)",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "data analytics techniques",
+    "expected": "Data Analytics",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "serverless functions",
+    "expected": "Serverless Computing",
+    "kind": "改写",
+    "translation": "",
+    "note": "语义改写-应命中"
+  },
+  {
+    "query": "信息与通信技术",
+    "expected": "Information and Communications Technology (ICT)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "中央处理器",
+    "expected": "Central Processing Unit (CPU)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "随机存取存储器",
+    "expected": "Random Access Memory (RAM)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "只读存储器",
+    "expected": "Read-Only Memory (ROM)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "图形处理器",
+    "expected": "Graphics Processing Unit (GPU)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "专用集成电路",
+    "expected": "Application-Specific Integrated Circuit (ASIC)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "现场可编程门阵列",
+    "expected": "Field-Programmable Gate Array (FPGA)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "固态硬盘",
+    "expected": "Solid-State Drive (SSD)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "直接内存访问",
+    "expected": "Direct Memory Access (DMA)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "输入/输出",
+    "expected": "Input/Output (I/O)",
+    "translation": "",
+    "kind": "中文反向",
+    "note": "中文源文-应命中"
+  },
+  {
+    "query": "VGG-16",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Max-Pooling",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Softmax",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Rectified Linear Unit (ReLU)",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Feature Extraction",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Fraud Detection",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Kubernetes",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Hadoop",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "Apache Spark",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "E-commerce",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "GDPR",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  },
+  {
+    "query": "V2X",
+    "expected": "",
+    "note": "文章出现但词库无-应未命中"
+  }
+]

@@ -1,0 +1,6 @@
+# 知识库模块依赖(成员 C)
+# torch 请单独用 CPU 版安装:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+rapidfuzz>=3.0.0

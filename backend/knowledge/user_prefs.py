@@ -1,65 +1,62 @@
 """
-用户偏好管理
-============
-成员 C | v1.0 | 2026-08-06
+用户偏好 —— 薄适配器(方案A·整合 2026-08-11)
+=================================================
+对外保持旧骨架签名(A 端 orchestrator 零改动),内部委托成员 C 新交付包
+(rag/rag/knowledge_base,见 _backend.py)。契约转回 transagent.interface.UserPrefs。
 
-职责：用户翻译偏好Profile的读写。
-      目前用JSON文件存储（MVP阶段·后续可迁移到SQLite）。
+保留接口(旧签名):
+    load_user_prefs(user_id) -> UserPrefs
+    save_user_prefs(prefs) -> None
 
-使用：
-    from transagent.backend.knowledge.user_prefs import load_user_prefs, save_user_prefs
-    prefs = load_user_prefs("user_001")
+集成要点:
+  - 存储形态:旧骨架为 JSON 文件(./data/prefs/*.json),新包为 SQLite(tm.db 内
+    user_prefs 表)。偏好按 user_id 原样存取(不映射,偏好属用户身份而非共享积累)。
+  - 返回值:新包 load_prefs 返回 {preference_type: value} dict,适配层映射回
+    UserPrefs 常用字段;其余字段保持默认。
 """
-
 import json
-import os
+
 from transagent.interface import UserPrefs
-from transagent.backend.config import get_config
-
-
-_PREFS_DIR = "./data/prefs"
+from ._backend import user_prefs as _prefs
 
 
 def load_user_prefs(user_id: str) -> UserPrefs:
-    """加载用户偏好Profile。不存在时返回默认值。"""
-    os.makedirs(_PREFS_DIR, exist_ok=True)
-    prefs_file = os.path.join(_PREFS_DIR, f"{user_id}.json")
+    """旧签名。新包 load_prefs → UserPrefs(不存在的用户返回默认偏好)。
 
-    if not os.path.exists(prefs_file):
-        return UserPrefs(user_id=user_id)
-
-    try:
-        with open(prefs_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return UserPrefs(
-            user_id=data.get("user_id", user_id),
-            default_style=data.get("default_style", "technical"),
-            domain_tags=data.get("domain_tags", []),
-            term_preferences=data.get("term_preferences", {}),
-            strategy_history=data.get("strategy_history", []),
-            literal_ratio=data.get("literal_ratio", 0.6),
-            created_at=data.get("created_at", ""),
-            updated_at=data.get("updated_at", ""),
-        )
-    except Exception as e:
-        print(f"[Prefs] 加载失败，使用默认: {e}")
-        return UserPrefs(user_id=user_id)
+    新包 SQLite 按 preference_type:value 字符串存储;dict/list 类型经 JSON 编码,
+    读取时反解,保证与 interface.UserPrefs 字段类型一致。
+    """
+    raw = _prefs.load_prefs(user_id)
+    return UserPrefs(
+        user_id=user_id,
+        default_style=str(raw.get("default_style", "technical")),
+        literal_ratio=float(raw.get("literal_ratio", 0.6) or 0.6),
+        term_preferences=_load_json(raw.get("term_preferences"), {}),
+        domain_tags=_load_json(raw.get("domain_tags"), []),
+    )
 
 
 def save_user_prefs(prefs: UserPrefs) -> None:
-    """保存用户偏好Profile。"""
-    import datetime
-
-    os.makedirs(_PREFS_DIR, exist_ok=True)
-    prefs_file = os.path.join(_PREFS_DIR, f"{prefs.user_id}.json")
-
-    now = datetime.datetime.now().isoformat()
-    if not prefs.created_at:
-        prefs.created_at = now
-    prefs.updated_at = now
-
+    """旧签名。将 UserPrefs 常用字段落库(SQLite upsert,失败不影响主流程)。"""
     try:
-        with open(prefs_file, "w", encoding="utf-8") as f:
-            json.dump(prefs.to_dict(), f, ensure_ascii=False, indent=2)
+        d = prefs.to_dict()
+        _prefs.save_prefs(prefs.user_id, {
+            "default_style": d.get("default_style", "technical"),
+            "literal_ratio": d.get("literal_ratio", 0.6),
+            "term_preferences": json.dumps(d.get("term_preferences", {}), ensure_ascii=False),
+            "domain_tags": json.dumps(d.get("domain_tags", []), ensure_ascii=False),
+        })
     except Exception as e:
         print(f"[Prefs] 保存失败: {e}")
+
+
+def _load_json(value, fallback):
+    """偏好值字符串 → 原类型;非 JSON(或空)回退默认。"""
+    if value is None:
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return fallback

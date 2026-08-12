@@ -14,7 +14,8 @@ D1 验证脚本：跳过 pipeline + knowledge，直接用 mock 数据
 """
 
 import sys, io, asyncio, os, json, time
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # 强制刷新 config 单例以读取环境变量
 from transagent.backend.config import reset_config, get_config

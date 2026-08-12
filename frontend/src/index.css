@@ -1,0 +1,8 @@
+/* TransAgent 基础样式 reset */
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}

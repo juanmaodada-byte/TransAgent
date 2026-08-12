@@ -1,0 +1,210 @@
+/* ══════════════════════════════════════════════════════════════════
+   FileUpload 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.upload-container {
+  width: 100%;
+}
+
+/* ── 上传区域 ── */
+.upload-zone {
+  border: 2px dashed var(--color-gray-300);
+  border-radius: var(--radius-lg);
+  background: var(--color-gray-50);
+  padding: 48px 24px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  user-select: none;
+}
+
+.upload-zone:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.upload-zone:active {
+  transform: scale(0.995);
+}
+
+/* 拖拽悬停 */
+.upload-zone.drag-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+  border-style: solid;
+}
+
+/* 上传中 */
+.upload-zone.uploading {
+  border-color: var(--color-gray-300);
+  background: var(--color-gray-50);
+  cursor: wait;
+  opacity: 0.8;
+}
+
+/* 错误状态 */
+.upload-zone.has-error {
+  border-color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+/* ── 上传区域内容 ── */
+.upload-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.upload-zone-icon {
+  font-size: 3rem;
+  margin-bottom: 4px;
+}
+
+.upload-zone-text {
+  font-size: 1rem;
+  color: var(--color-gray-700);
+  font-weight: 500;
+  text-align: center;
+}
+
+.upload-zone-hint {
+  font-size: 0.82rem;
+  color: var(--color-gray-400);
+  text-align: center;
+}
+
+/* 隐藏的 file input */
+.upload-input-hidden {
+  display: none;
+}
+
+/* ── 上传 spinner ── */
+.upload-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--color-gray-200);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   上传结果卡片
+   ══════════════════════════════════════════════════════════════════ */
+
+.upload-result {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.upload-result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-gray-100);
+}
+
+.upload-result-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.upload-result-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-result-filename {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-gray-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-result-meta {
+  font-size: 0.82rem;
+  color: var(--color-gray-500);
+}
+
+.upload-result-check {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+/* ── 预览 ── */
+.upload-result-preview {
+  margin-top: 16px;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.upload-result-preview pre {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-gray-600);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── 操作按钮 ── */
+.upload-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-gray-100);
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .upload-zone {
+    padding: 32px 16px;
+  }
+
+  .upload-zone-icon {
+    font-size: 2.2rem;
+  }
+
+  .upload-result-actions {
+    flex-direction: column;
+  }
+
+  .upload-result-actions .btn-primary,
+  .upload-result-actions .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .upload-result-header {
+    flex-wrap: wrap;
+  }
+}

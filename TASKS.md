@@ -12,8 +12,8 @@
 | 文件 | 状态 | 关键任务 |
 |------|------|---------|
 | `llm_client.py` | ✅ 已有骨架 | 测试DeepSeek API连接；备选模型切换逻辑验证 |
-| `pre_agent.py` | ✅ 已有骨架 | 策略Prompt调优（D3开始）；RAG查询集成测试 |
-| `translate_agent.py` | ✅ 已有骨架 | 主译Prompt调优（D4开始）；多chunk一致性预检测试 |
+| `pre_agent.py` | ✅ D3完成 | 策略/术语Prompt已调优（few-shot+JSON约束）；RAG查询按配置开关启用（`rag_verification_enabled`·默认关，成员C完成RAG后打开）；测试 `tests/test_pre_agent_d3.py`（5项全过） |
+| `translate_agent.py` | ✅ D4完成 | 主译Prompt调优（双方向few-shot示例·Markdown结构保留·翻译腔规避规则收紧）；一致性预检强化（占位符双保护{NT_n}+{T_n}·术语一致性真实检测·方向感知）；串行/并行共用 `_run_consistency_check()`；修复存量 `{NT_n}` f-string bug（并行路径NameError）；测试 `tests/test_translate_agent_d4.py`（11项全过） |
 | `post_agent.py` | ✅ 已有骨架 | 质检Prompt调优（D5开始）；润色效果对比 |
 | `orchestrator.py` | ✅ 已有骨架 | 全流程串联（D6）；与pipeline/knowledge模块对接 |
 | `degradation.py` | ✅ 已有骨架 | L0-L3降级策略完善（D8） |

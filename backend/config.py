@@ -36,12 +36,12 @@ class ChunkConfig:
 @dataclass
 class KnowledgeConfig:
     """知识库配置"""
-    # RAG术语库
+    # RAG术语库（旧骨架字段·已由适配层委托新交付包 config，此处仅存档对齐）
     chroma_persist_dir: str = "./data/chroma"
     embedding_model: str = "BAAI/bge-m3"
     rag_collection_name: str = "ict_terms"
     rag_top_k: int = 5                         # 术语检索返回数
-    rag_similarity_threshold: float = 0.75     # 语义相似度阈值
+    rag_similarity_threshold: float = 0.70     # 语义相似度阈值（与知识库校准值对齐）
 
     # TM翻译记忆
     tm_db_path: str = "./data/tm.db"
@@ -64,6 +64,7 @@ class PipelineConfig:
     term_extraction_temperature: float = 0.2
     term_extraction_max_tokens: int = 2000
     web_search_enabled: bool = True             # 是否启用Web搜索查证
+    rag_verification_enabled: bool = True       # 是否启用RAG术语库查证（D6整合后打开·适配层委托新交付包）
 
     # 主译
     translate_temperature: float = 0.2

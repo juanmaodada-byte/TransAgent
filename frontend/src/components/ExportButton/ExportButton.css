@@ -1,0 +1,139 @@
+/* ══════════════════════════════════════════════════════════════════
+   ExportButton 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.export-button {
+  position: relative;
+  display: inline-block;
+}
+
+.export-main-btn {
+  min-width: 140px;
+}
+
+.export-main-icon {
+  font-size: 1rem;
+}
+
+.export-caret {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* ── 导出中 spinner ── */
+.export-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 下拉面板 ── */
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 320px;
+  background: #fff;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+  z-index: 50;
+  animation: dropdown-in 0.2s ease-out;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.export-dropdown-title {
+  font-size: 0.78rem;
+  color: var(--color-gray-500);
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--color-gray-100);
+  margin-bottom: 8px;
+}
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.export-option:hover {
+  background: var(--color-gray-50);
+}
+
+.export-option-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.export-option-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.export-option-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-gray-800);
+}
+
+.export-option-hint {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  margin-top: 1px;
+}
+
+.export-option-ext {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .export-dropdown {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 12px;
+    min-width: auto;
+  }
+
+  .export-main-btn {
+    width: 100%;
+  }
+}

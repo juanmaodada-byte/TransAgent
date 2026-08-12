@@ -1,0 +1,316 @@
+/* ══════════════════════════════════════════════════════════════════
+   ProgressBar 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.progress-bar {
+  background: #fff;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── 顶部状态栏 ── */
+.progress-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.progress-top-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.progress-pct {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-label {
+  font-size: 0.82rem;
+  color: var(--color-gray-500);
+}
+
+.progress-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--color-gray-500);
+}
+
+.progress-timer {
+  font-family: var(--font-mono);
+  color: var(--color-gray-600);
+}
+
+.progress-session {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--color-gray-100);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-gray-400);
+}
+
+/* ── 连接状态 ── */
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.dot-idle {
+  background: var(--color-gray-300);
+}
+
+.connection-dot.dot-connecting {
+  background: var(--color-warning);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.connection-dot.dot-connected {
+  background: var(--color-success);
+}
+
+.connection-dot.dot-disconnected {
+  background: var(--color-gray-400);
+}
+
+.connection-dot.dot-error {
+  background: var(--color-error);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.connection-label {
+  color: var(--color-gray-500);
+}
+
+/* ── 总体进度条 ── */
+.progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--color-gray-100);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), #60a5fa);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+/* ── 当前消息 ── */
+.progress-current-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--color-gray-700);
+  background: var(--color-primary-light);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.msg-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+/* ── 步骤列表 ── */
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+}
+
+.step-row.active {
+  background: var(--color-gray-50);
+}
+
+/* ── 步骤指示器 ── */
+.step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 24px;
+}
+
+.step-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: background 0.3s, color 0.3s, transform 0.2s;
+}
+
+/* pending */
+.step-badge.pending {
+  background: var(--color-gray-100);
+  color: var(--color-gray-400);
+}
+
+/* in_progress */
+.step-badge.in_progress {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  transform: scale(1.15);
+}
+
+.step-badge.in_progress.pulse {
+  animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+}
+
+/* completed */
+.step-badge.completed {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+/* failed */
+.step-badge.failed {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* skipped */
+.step-badge.skipped {
+  background: var(--color-gray-100);
+  color: var(--color-gray-400);
+}
+
+/* waiting_user */
+.step-badge.waiting_user {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── 步骤连接线 ── */
+.step-connector {
+  width: 2px;
+  height: 10px;
+  background: var(--color-gray-200);
+  margin-top: 2px;
+}
+
+.step-connector.filled {
+  background: var(--color-success);
+}
+
+/* ── 步骤文字 ── */
+.step-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.step-number {
+  font-size: 0.78rem;
+  color: var(--color-gray-400);
+  font-family: var(--font-mono);
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.step-label {
+  font-size: 0.9rem;
+  color: var(--color-gray-600);
+  transition: color 0.2s;
+}
+
+.step-row.active .step-label {
+  color: var(--color-gray-900);
+  font-weight: 500;
+}
+
+.step-row.completed .step-label {
+  color: var(--color-gray-800);
+}
+
+.step-row.failed .step-label {
+  color: var(--color-error);
+}
+
+/* ── 步骤 spinner ── */
+.step-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-gray-200);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-left: 4px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .progress-bar {
+    padding: 16px;
+  }
+
+  .progress-top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .progress-top-right {
+    flex-wrap: wrap;
+  }
+
+  .step-label {
+    font-size: 0.84rem;
+  }
+}
