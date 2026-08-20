@@ -1,0 +1,97 @@
+/* ══════════════════════════════════════════════════════════════════
+   WorkspacePage 样式 — 三栏布局
+   ══════════════════════════════════════════════════════════════════ */
+
+.workspace-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+
+/* ── 顶条 ── */
+.workspace-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.workspace-new-btn {
+  color: var(--muted-foreground);
+}
+
+.workspace-new-btn:hover {
+  color: var(--foreground);
+}
+
+.workspace-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-mode {
+  font-size: var(--text-xs);
+}
+
+.topbar-panel-btn {
+  flex-shrink: 0;
+}
+
+.topbar-panel-btn.active {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* ── 三栏 body ── */
+.workspace-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 820px) {
+  .workspace-body {
+    position: relative;
+  }
+}
+
+@media (max-width: 640px) {
+  .left-panel {
+    width: 56px;
+    min-width: 56px;
+  }
+
+  .feature-entry .feature-label,
+  .project-list-title,
+  .project-row-meta,
+  .project-name {
+    display: none;
+  }
+
+  .feature-entry {
+    justify-content: center;
+    padding: 10px 0;
+  }
+
+  .left-footer {
+    flex-direction: column;
+    padding: 8px 4px;
+  }
+
+  .mode-badge {
+    font-size: var(--text-xs);
+    writing-mode: vertical-rl;
+  }
+}

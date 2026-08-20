@@ -1,23 +1,21 @@
 """
 译中Sub-Agent
 =============
-Vibe Coder A | v1.3 | 2026-08-10 (D5)
+Vibe Coder A | v1.4 | 2026-08-15 (D6)
 
 职责：译中agent说明书 + 工作流协调（按工作流调用两个技能）
 内部：技能一·主译（逐chunk·串行/并行）→ 技能二·一致性检查与修复（多chunk条件触发）
 
-输入：chunks + TermTable + StrategyBook + TM参考
-输出：TranslateResult（初译稿 + 一致性报告）
+输入：SharedPool（chunks + term_table + strategy_book + tm_refs）
+输出：写回 SharedPool（chunk_drafts + draft + consistency_report）并返回 TranslateResult
 
 D2更新：继承BaseAgent框架，支持统一spawn/超时/取消；新增并行chunk翻译能力
 D4更新：主译Prompt调优·一致性预检强化·一致性检查重构为共用helper
-D5更新（技能化重构）：
-  - 技能目录化：core/skills/<skill_dir>/（skill.md说明书 + reference/参考材料 + scripts/实现）
-  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
-  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
-  - 翻译方向以策略书 direction 字段为准（策略技能已从输入记录）——
-    本模块仅在策略书未记录时用调用参数兜底（direction="" 时默认 en_to_zh）
-  - chunk翻译失败由工作流降级（标记[翻译失败]保留原文·不影响其余chunk）
+D5更新（技能化重构）：agent说明书 + 技能说明书（追加式）；chunk失败由工作流降级
+D6更新（共享池）：
+  - 主入口改为池子派发器：spawn_translate(pool) 走共享池；传旧参数自动构建池子（向后兼容）
+  - 技能执行前 validate_pool 校验 requires，执行后写回池子 + 登记provides
+  - 逐chunk译文写回 pool.chunk_drafts（供编排器对齐 + 质检按句对定位）
 """
 
 from transagent.interface import (
@@ -27,6 +25,7 @@ from transagent.backend.core.agent_framework import (
     BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
     spawn_parallel, SpawnTask,
 )
+from transagent.backend.core.shared_pool import SharedPool
 from transagent.backend.core.skills.translate_skills.chunk_translate.scripts.chunk_translate_skill import ChunkTranslateSkill
 from transagent.backend.core.skills.translate_skills.consistency_fix.scripts.consistency_skill import ConsistencySkill
 
@@ -68,23 +67,85 @@ TM参考保持一致风格、遵循策略书。翻译方向以策略书中的"�
 # ══════════════════════════════════════════════════════════════════
 
 async def spawn_translate(
-    chunks: list[Chunk],
-    term_table: TermTable,
-    strategy_book: StrategyBook,
+    chunks_or_pool,
+    term_table: TermTable | None = None,
+    strategy_book: StrategyBook | None = None,
     tm_refs: list[TMEntry] | None = None,
     direction: str = "",
 ) -> TranslateResult:
     """
-    译中Sub-Agent主入口（串行工作流）。
+    译中Sub-Agent主入口·串行（D6池子派发器·兼容旧签名）。
 
     执行顺序（写死在代码里，AI不能跳步）：
       1. 技能一·主译：逐chunk翻译（前chunk译文作后chunk上下文·前2000字符）
       2. 技能二·一致性检查与修复：仅多chunk时触发（Python预检+LLM条件修复）
 
-    Args:
-        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
-                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
+    调用方式（二选一）：
+      - 池子路径：spawn_translate(pool)（主流程·共享池已填 chunks/term_table/strategy_book/tm_refs）
+      - 兼容路径：spawn_translate(chunks, term_table, strategy_book, tm_refs, direction=...)（测试/演示）
     """
+    if isinstance(chunks_or_pool, SharedPool):
+        pool = chunks_or_pool
+    else:
+        pool = SharedPool()
+        pool.chunks = chunks_or_pool
+        pool.term_table = term_table or TermTable()
+        pool.strategy_book = strategy_book or StrategyBook()
+        pool.tm_refs = tm_refs or []
+    return await _translate_from_pool(pool, direction, parallel_mode=False)
+
+
+async def spawn_translate_parallel(
+    chunks_or_pool,
+    term_table: TermTable | None = None,
+    strategy_book: StrategyBook | None = None,
+    tm_refs: list[TMEntry] | None = None,
+    direction: str = "",
+    max_concurrency: int = 4,
+    parent_context: AgentContext | None = None,
+) -> TranslateResult:
+    """
+    译中Sub-Agent主入口·并行chunk翻译（D6池子派发器·兼容旧签名）。
+
+    与串行模式的区别：
+      - 所有chunk同时翻译（无跨chunk上下文传递）
+      - 每个chunk独立携带完整策略书+术语表+TM参考（通过技能一的并行模式）
+      - 翻译完成后做一致性检查（Python预检+LLM条件修复）
+
+    调用方式（二选一）：
+      - 池子路径：spawn_translate_parallel(pool, max_concurrency=..., parent_context=...)
+      - 兼容路径：spawn_translate_parallel(chunks, term_table, strategy_book, tm_refs,
+                   direction=..., max_concurrency=3)
+    """
+    if isinstance(chunks_or_pool, SharedPool):
+        pool = chunks_or_pool
+    else:
+        pool = SharedPool()
+        pool.chunks = chunks_or_pool
+        pool.term_table = term_table or TermTable()
+        pool.strategy_book = strategy_book or StrategyBook()
+        pool.tm_refs = tm_refs or []
+    return await _translate_from_pool(
+        pool, direction,
+        parallel_mode=True,
+        max_concurrency=max_concurrency,
+        parent_context=parent_context,
+    )
+
+
+async def _translate_from_pool(
+    pool: SharedPool,
+    direction: str = "",
+    parallel_mode: bool = False,
+    max_concurrency: int = 4,
+    parent_context: AgentContext | None = None,
+) -> TranslateResult:
+    """核心工作流：从池子读 → 调技能 → 写回池子。"""
+    chunks = pool.chunks
+    term_table = pool.term_table
+    strategy_book = pool.strategy_book
+    tm_refs = pool.tm_refs
+
     # 方向单一事实来源=策略书：未记录时用调用参数兜底
     if not strategy_book.direction:
         strategy_book.direction = direction or "en_to_zh"
@@ -92,10 +153,52 @@ async def spawn_translate(
     chunk_skill = ChunkTranslateSkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
     consistency_skill = ConsistencySkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
 
-    # ── Step 1: 逐chunk主译（技能一·串行）──
+    # ── Step 1: 主译（技能一·串行或并行）──
+    chunk_skill.validate_pool(pool)   # requires: chunks + term_table + strategy_book
+    if parallel_mode:
+        draft_parts = await _translate_parallel(
+            chunk_skill, chunks, term_table, strategy_book, tm_refs,
+            max_concurrency, parent_context,
+        )
+    else:
+        draft_parts = await _translate_serial(
+            chunk_skill, chunks, term_table, strategy_book, tm_refs,
+        )
+    pool.chunk_drafts = draft_parts            # 逐chunk译文写回池子（供对齐+质检）
+    chunk_skill.mark_pool_provided(pool)
+
+    # ── Step 2: 合并初译稿 + 一致性检查（技能二·仅多chunk时触发）──
+    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else (draft_parts[0] if draft_parts else "")
+    if len(chunks) > 1:
+        consistency_skill.validate_pool(pool)   # requires: chunk_drafts 已写回
+        draft, consistency_report = await consistency_skill.execute(
+            draft_parts, chunks, term_table, strategy_book
+        )
+        consistency_skill.mark_pool_provided(pool)
+    else:
+        # 单chunk：draft/consistency_report 由工作流协调器产出（非技能），登记为译中agent提供
+        consistency_report = ConsistencyReport()
+        pool.mark_provided({"draft", "consistency_report"}, agent="TranslateAgent")
+
+    pool.draft = draft
+    pool.consistency_report = consistency_report
+    return TranslateResult(
+        draft=draft,
+        consistency_report=consistency_report,
+        tm_refs_used=len(tm_refs) if tm_refs else 0,
+    )
+
+
+async def _translate_serial(
+    chunk_skill: ChunkTranslateSkill,
+    chunks: list[Chunk],
+    term_table: TermTable,
+    strategy_book: StrategyBook,
+    tm_refs: list[TMEntry] | None,
+) -> list[str]:
+    """串行主译：前chunk译文作后chunk上下文。失败chunk标记原文保留·不影响其余。"""
     draft_parts: list[str] = []
     prev_translation = ""
-
     for chunk in chunks:
         try:
             translated = await chunk_skill.execute(
@@ -108,54 +211,19 @@ async def spawn_translate(
             # chunk失败降级：标记原文保留·不影响其余chunk·前文上下文不更新
             print(f"[TranslateAgent] chunk {chunk.chunk_id} 翻译失败: {e}")
             draft_parts.append(f"[翻译失败] {chunk.source_text[:200]}...")
-
-    # ── Step 2: 合并初译稿 + 一致性检查（技能二·仅多chunk时触发）──
-    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else (draft_parts[0] if draft_parts else "")
-    if len(chunks) > 1:
-        draft, consistency_report = await consistency_skill.execute(
-            draft_parts, chunks, term_table, strategy_book
-        )
-    else:
-        consistency_report = ConsistencyReport()
-
-    return TranslateResult(
-        draft=draft,
-        consistency_report=consistency_report,
-        tm_refs_used=len(tm_refs) if tm_refs else 0,
-    )
+    return draft_parts
 
 
-async def spawn_translate_parallel(
+async def _translate_parallel(
+    chunk_skill: ChunkTranslateSkill,
     chunks: list[Chunk],
     term_table: TermTable,
     strategy_book: StrategyBook,
-    tm_refs: list[TMEntry] | None = None,
-    direction: str = "",
-    max_concurrency: int = 4,
-    parent_context: AgentContext | None = None,
-) -> TranslateResult:
-    """
-    并行chunk翻译（D2新增能力·D5技能化后走技能一）。
-
-    与串行模式的区别：
-      - 所有chunk同时翻译（无跨chunk上下文传递）
-      - 每个chunk独立携带完整策略书+术语表+TM参考（通过技能一的并行模式）
-      - 翻译完成后做一致性检查（Python预检+LLM条件修复）
-
-    Args:
-        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
-                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
-        max_concurrency: 最大并发chunk翻译数（默认4，避免API频率限制）
-        parent_context: 父级上下文（用于取消信号传递）
-    """
-    # 方向单一事实来源=策略书：未记录时用调用参数兜底
-    if not strategy_book.direction:
-        strategy_book.direction = direction or "en_to_zh"
-
-    chunk_skill = ChunkTranslateSkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
-    consistency_skill = ConsistencySkill(agent_prompt=TRANSLATE_AGENT_SYSTEM_PROMPT)
-
-    # ── Step 1: 并行主译（技能一·并行模式·每chunk一个任务）──
+    tm_refs: list[TMEntry] | None,
+    max_concurrency: int,
+    parent_context: AgentContext | None,
+) -> list[str]:
+    """并行主译：每chunk一个spawn任务·独立携带完整策略。"""
     tasks = [
         SpawnTask(
             name=f"translate_{chunk.chunk_id}",
@@ -183,20 +251,7 @@ async def spawn_translate_parallel(
         else:
             chunk = chunks[i]
             draft_parts.append(f"[翻译失败:{result.error[:80]}] {chunk.source_text[:200]}...")
-
-    # ── Step 2: 合并初译稿 + 一致性检查（技能二·仅多chunk时触发）──
-    draft = "\n\n".join(draft_parts) if len(draft_parts) > 1 else (draft_parts[0] if draft_parts else "")
-    consistency_report = ConsistencyReport()
-    if len(chunks) > 1:
-        draft, consistency_report = await consistency_skill.execute(
-            draft_parts, chunks, term_table, strategy_book
-        )
-
-    return TranslateResult(
-        draft=draft,
-        consistency_report=consistency_report,
-        tm_refs_used=len(tm_refs) if tm_refs else 0,
-    )
+    return draft_parts
 
 
 # ══════════════════════════════════════════════════════════════════

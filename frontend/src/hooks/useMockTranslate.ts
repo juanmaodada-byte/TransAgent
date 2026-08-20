@@ -2,8 +2,12 @@
  * useMockTranslate Hook
  * =====================
  * 用 setTimeout 模拟 SSE 事件序列，支持前端独立开发和演示。
- * 接口与 useTranslateSSE 完全一致，在 TranslatePage 中通过
+ * 接口与 useTranslateSSE 一致，在 TranslatePage 中通过
  * 环境变量 VITE_USE_MOCK=true 切换。
+ *
+ * Mock 特性：
+ *  - 术语确认「暂停」：到达术语确认断点后停止后续步骤，等待 resume() 继续
+ *  - 终稿/初译稿「回显用户输入」（真实翻译请切 VITE_USE_MOCK=false）
  */
 
 import { useState, useRef, useCallback } from 'react';
@@ -17,7 +21,7 @@ import type {
   EvolutionReport,
 } from '../types';
 import { STEP_ORDER } from '../types';
-import type { ConnectionStatus, UseTranslateSSEReturn } from './useTranslateSSE';
+import type { ConnectionStatus, UseTranslateSSEReturn, UseTranslateSSEOptions } from './useTranslateSSE';
 
 // ── Mock 数据 ──
 
@@ -55,79 +59,11 @@ const MOCK_QA: QAResult = {
   summary: '翻译质量优秀，术语一致性好，代码块完整保留。仅1处轻微翻译腔。',
 };
 
-const MOCK_FINAL = `# Kubernetes Pod 概述
+/** 无输入文本时的兜底终稿（有输入时回显输入） */
+const MOCK_DEFAULT_FINAL = `# Mock 演示文档
 
-## 什么是 Pod
-
-**Pod** 是 Kubernetes 中最小的可部署计算单元。一个 Pod 包含一个或多个容器，这些容器**共享存储和网络资源**。
-
-> 核心概念：Pod 中的容器总是被调度到同一节点上协同运行，共享网络命名空间和存储卷。
-
-## 创建 Pod
-
-### 使用 YAML 清单
-
-创建一个简单的 \`nginx\` Pod 示例：
-
-\`\`\`yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: nginx-demo
-  labels:
-    app: nginx
-spec:
-  containers:
-  - name: nginx
-    image: nginx:1.14.2
-    ports:
-    - containerPort: 80
-\`\`\`
-
-### 使用 kubectl 命令
-
-\`\`\`bash
-# 从清单文件创建
-kubectl apply -f pod.yaml
-
-# 查看 Pod 状态
-kubectl get pods -o wide
-
-# 查看详细事件
-kubectl describe pod nginx-demo
-\`\`\`
-
-## 常用配置项
-
-| 配置项 | 说明 | 必填 |
-|--------|------|------|
-| \`containers\` | 容器列表 | ✅ |
-| \`restartPolicy\` | 重启策略（Always/OnFailure/Never） | ❌ |
-| \`nodeSelector\` | 节点选择器 | ❌ |
-| \`volumes\` | 存储卷定义 | ❌ |
-
-## 检查 Pod 状态
-
-1. 使用 \`kubectl get pods\` 查看状态
-2. 使用 \`kubectl logs <pod-name>\` 查看日志
-3. 使用 \`kubectl exec -it <pod-name> -- /bin/sh\` 进入容器
-
-### 状态说明
-
-- \`Pending\` — 等待调度
-- \`Running\` — 正常运行
-- \`Succeeded\` — 任务型 Pod 成功退出
-- \`CrashLoopBackOff\` — 容器崩溃重启中
-
-## 资源回收
-
-当 Pod 不再需要时，使用以下命令删除：
-
-\`\`\`bash
-kubectl delete pod nginx-demo
-\`\`\`
-
-> 注意：由 \`Deployment\` 管理的 Pod 删除后会被自动重建。`;
+> 📌 当前为 Mock 演示模式：未提供输入文本，展示默认示例。
+> 粘贴你的原文后，Mock 会回显输入内容；真实翻译请切换 VITE_USE_MOCK=false。`;
 
 const MOCK_EVOLUTION: EvolutionReport = {
   new_terms_count: 3,
@@ -143,17 +79,21 @@ const MOCK_EVOLUTION: EvolutionReport = {
 // [delay_ms, step, state, message]
 type MockStep = [number, StepKey, StepState, string];
 
-const MOCK_PROGRESS: MockStep[] = [
+/** 术语确认断点之前的步骤（自动执行） */
+const MOCK_PROGRESS_PRE: MockStep[] = [
   [500, 'input_detect', 'in_progress', '正在检测文件格式…'],
   [800, 'input_detect', 'completed', '格式检测完成: Markdown'],
   [400, 'input_convert', 'in_progress', '正在解析文档结构…'],
   [1000, 'input_convert', 'completed', '预处理完成: 3200 tokens | 3 chunks | 占位符 5处'],
   [600, 'pre_translate', 'in_progress', '译前Sub-Agent工作中（策略+术语）…'],
-  [1500, 'pre_translate', 'completed', 'ICT子领域: Kubernetes/云原生 | 术语: 8个 (全部自动确认)'],
-  [300, 'terminology_confirm', 'in_progress', '检查术语确认状态…'],
-  [500, 'terminology_confirm', 'completed', '自动接受0个术语'],
+  [1500, 'pre_translate', 'completed', 'ICT子领域: Kubernetes/云原生 | 术语: 8个'],
+];
+
+/** 术语确认断点之后的步骤（resume() 后继续） */
+const MOCK_PROGRESS_POST: MockStep[] = [
+  [500, 'terminology_confirm', 'completed', '术语已确认，继续翻译'],
   [800, 'translate', 'in_progress', '译中Sub-Agent工作中（串行·3 chunk）…'],
-  [2500, 'translate', 'completed', '初译完成: 2847字符 | 一致性: 预检通过'],
+  [2500, 'translate', 'completed', '初译完成 | 一致性: 预检通过'],
   [600, 'post_translate', 'in_progress', '译后Sub-Agent工作中（质检→润色）…'],
   [1800, 'post_translate', 'completed', '质检: 9.2分 | 术语9.5·语义9.0·代码10.0·流畅9.0·风格8.5'],
   [400, 'restore', 'in_progress', '正在还原不可译区域…'],
@@ -176,7 +116,9 @@ function createInitialSteps(): Record<StepKey, StepState> {
 
 // ── Hook ──
 
-export function useMockTranslate(): UseTranslateSSEReturn {
+export function useMockTranslate(options?: UseTranslateSSEOptions): UseTranslateSSEReturn & {
+  resume: () => void;
+} {
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(createInitialSteps);
   const [currentStep, setCurrentStep] = useState<StepKey | null>(null);
   const [currentMessage, setCurrentMessage] = useState('');
@@ -196,6 +138,12 @@ export function useMockTranslate(): UseTranslateSSEReturn {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutIds = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const sourceTextRef = useRef<string | undefined>(undefined);
+  const resumedRef = useRef(false);
+
+  // onEvent 用 ref 保持稳定
+  const onEventRef = useRef(options?.onEvent);
+  onEventRef.current = options?.onEvent;
 
   // ── 清理 ──
 
@@ -208,11 +156,97 @@ export function useMockTranslate(): UseTranslateSSEReturn {
     }
   }, []);
 
+  // ── 调度工具 ──
+
+  const scheduleSteps = useCallback(
+    (
+      seq: MockStep[],
+      baseDelay: number,
+      onStep: (step: StepKey, state: StepState, message: string, index: number) => void
+    ) => {
+      let cumulative = baseDelay;
+      seq.forEach(([delay, step, state, message], index) => {
+        cumulative += delay;
+        const id = setTimeout(() => onStep(step, state, message, index), cumulative);
+        timeoutIds.current.push(id);
+      });
+      return cumulative;
+    },
+    []
+  );
+
+  /** 执行单个步骤 + 触发对应事件 */
+  const runStep = useCallback(
+    (step: StepKey, state: StepState, message: string, index: number) => {
+      setSteps((prev) => ({ ...prev, [step]: state }));
+      setCurrentStep(step);
+      setCurrentMessage(message);
+      onEventRef.current?.({ type: 'progress', step, state, message });
+
+      const sourceText = sourceTextRef.current;
+      const finalContent = sourceText?.trim()
+        ? `> 📌 Mock 演示模式：以下为输入原文回显（真实翻译请切换 VITE_USE_MOCK=false）\n\n${sourceText}`
+        : MOCK_DEFAULT_FINAL;
+
+      if (step === 'pre_translate' && state === 'completed') {
+        setStrategy(MOCK_STRATEGY);
+        setTermsSummary({ total_terms: 8, rag_hit: 5, web_search: 0, pending: 0 });
+        onEventRef.current?.({ type: 'strategy', ...MOCK_STRATEGY });
+        onEventRef.current?.({
+          type: 'terms', total_terms: 8, rag_hit: 5, web_search: 0, pending: 0,
+        });
+        const pending = MOCK_TERMS.filter((t) => t.confidence === 'medium');
+        setPendingTerms(pending);
+        onEventRef.current?.({
+          type: 'terms_pending',
+          session_id: 'mock_session_001',
+          pending_terms: pending,
+        });
+      }
+      if (step === 'translate' && state === 'in_progress') {
+        const chunk = {
+          chunk_id: 'chunk_1',
+          text_chunk: sourceText?.trim() ? sourceText : MOCK_DEFAULT_FINAL,
+        };
+        setDraftChunks([chunk]);
+        onEventRef.current?.({ type: 'draft', chunk_id: chunk.chunk_id, text_chunk: chunk.text_chunk });
+      }
+      if (step === 'post_translate' && state === 'completed') {
+        setQaResult(MOCK_QA);
+        setFinalText(finalContent);
+        onEventRef.current?.({ type: 'qa', ...MOCK_QA });
+        onEventRef.current?.({
+          type: 'final', final_text: finalContent, session_id: 'mock_session_001',
+        });
+      }
+      if (step === 'learn' && state === 'completed') {
+        setEvolution(MOCK_EVOLUTION);
+        onEventRef.current?.({ type: 'evolution', ...MOCK_EVOLUTION });
+      }
+      if (step === 'export' && state === 'completed') {
+        setExportFormats(['md', 'docx', 'html', 'bilingual']);
+        setRealSessionId('mock_session_001');
+        setConnectionStatus('disconnected');
+        setElapsedSeconds(17);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        onEventRef.current?.({
+          type: 'done',
+          session_id: 'mock_session_001',
+          elapsed_seconds: 17,
+          export_formats: ['md', 'docx', 'html', 'bilingual'],
+        });
+      }
+    },
+    []
+  );
+
   // ── 启动 ──
 
   const start = useCallback(
-    (_fileId: string, _userId: string = 'demo_user') => {
-      // 重置所有状态
+    (_fileId: string, _userId: string = 'demo_user', sourceText?: string) => {
       clearAllTimeouts();
       setSteps(createInitialSteps());
       setCurrentStep(null);
@@ -229,66 +263,28 @@ export function useMockTranslate(): UseTranslateSSEReturn {
       setExportFormats([]);
       setError(null);
       setRealSessionId(null);
+      sourceTextRef.current = sourceText;
+      resumedRef.current = false;
 
       // 模拟连接建立
-      const connectId = setTimeout(() => {
-        setConnectionStatus('connected');
-      }, 300);
+      const connectId = setTimeout(() => setConnectionStatus('connected'), 300);
       timeoutIds.current.push(connectId);
 
       // 启动计时
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
+      timerRef.current = setInterval(() => setElapsedSeconds((prev) => prev + 1), 1000);
 
-      // 按序列逐步触发事件
-      let cumulativeDelay = 500;
-      for (const [delay, step, state, message] of MOCK_PROGRESS) {
-        cumulativeDelay += delay;
-        const id = setTimeout(() => {
-          setSteps((prev) => ({ ...prev, [step]: state }));
-          setCurrentStep(step);
-          setCurrentMessage(message);
-
-          // 当特定步骤完成时触发额外事件
-          if (step === 'pre_translate' && state === 'completed') {
-            setStrategy(MOCK_STRATEGY);
-            setTermsSummary({
-              total_terms: 8,
-              rag_hit: 5,
-              web_search: 0,
-              pending: 0,
-            });
-            setPendingTerms(MOCK_TERMS.filter((t) => t.confidence === 'medium'));
-          }
-          if (step === 'translate' && state === 'in_progress') {
-            setDraftChunks([
-              { chunk_id: 'chunk_1', text_chunk: '# Kubernetes Pod 概述\n\n## 什么是 Pod\n\nPod 是 Kubernetes 中最小的...' },
-            ]);
-          }
-          if (step === 'post_translate' && state === 'completed') {
-            setQaResult(MOCK_QA);
-            setFinalText(MOCK_FINAL);
-          }
-          if (step === 'learn' && state === 'completed') {
-            setEvolution(MOCK_EVOLUTION);
-          }
-          if (step === 'export' && state === 'completed') {
-            setExportFormats(['docx', 'html', 'bilingual']);
-            setRealSessionId('mock_session_001');
-            setConnectionStatus('disconnected');
-            setElapsedSeconds(17); // 用模拟值替换计时器
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-              timerRef.current = null;
-            }
-          }
-        }, cumulativeDelay);
-        timeoutIds.current.push(id);
-      }
+      // 调度「确认断点之前」的步骤；到 terms_pending 后暂停等待 resume()
+      scheduleSteps(MOCK_PROGRESS_PRE, 500, runStep);
     },
-    [clearAllTimeouts]
+    [clearAllTimeouts, scheduleSteps, runStep]
   );
+
+  /** 术语确认后继续（Mock 的「确认断点」恢复） */
+  const resume = useCallback(() => {
+    if (resumedRef.current) return;
+    resumedRef.current = true;
+    scheduleSteps(MOCK_PROGRESS_POST, 0, runStep);
+  }, [scheduleSteps, runStep]);
 
   // ── 中止 ──
 
@@ -297,7 +293,8 @@ export function useMockTranslate(): UseTranslateSSEReturn {
     setConnectionStatus('disconnected');
   }, [clearAllTimeouts]);
 
-  // ── 清除待确认术语（确认提交后调用）──
+  // ── 清除待确认术语 ──
+
   const clearPendingTerms = useCallback(() => {
     setPendingTerms([]);
   }, []);
@@ -321,5 +318,6 @@ export function useMockTranslate(): UseTranslateSSEReturn {
     start,
     abort,
     clearPendingTerms,
+    resume,
   };
 }

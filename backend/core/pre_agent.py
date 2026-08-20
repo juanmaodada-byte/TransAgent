@@ -1,35 +1,34 @@
 """
 译前Sub-Agent
 =============
-Vibe Coder A | v1.3 | 2026-08-10 (D5)
+Vibe Coder A | v1.4 | 2026-08-15 (D6)
 
 职责：译前agent说明书 + 工作流协调（按工作流调用两个技能）
 内部：技能一·策略制定（LLM·先执行）→ 技能二·术语提取（LLM·后执行·多chunk分批全查→合并）
 
-输入：PreprocessResult + UserPrefs
-输出：PreTranslateResult（chunks + strategy_book + term_table）
+输入：SharedPool（source_md + chunks + user_prefs）
+输出：写回 SharedPool（strategy_book + term_table）并返回 PreTranslateResult
 
 D2更新：继承BaseAgent框架，支持统一spawn/超时/取消/重试
 D3更新：策略/术语Prompt调优（few-shot示例·提取标准收紧·JSON约束强化）·方向感知
-D5更新（技能化重构）：
-  - 通用技能框架：core/skills/skill.py（Skill基类+登记处·说明书从skill.md运行时加载）
-  - 技能目录化：core/skills/<skill_dir>/（skill.md说明书 + reference/参考材料 + scripts/实现）
-  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
-  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
-  - 术语提取：单chunk读全文；多chunk分批全查（每chunk一次调用）→ 合并去重（首次译法优先）
-  - 翻译方向记录进策略书 direction 字段（策略技能从输入记录），术语技能以该字段路由方向
-  - RAG查证逻辑随技能迁入 term_extraction/scripts，仍按配置开关休眠（成员C完成后打开即接入）
-  - 结构解析/文档分块仍由主agent预处理完成（本模块不重复处理）
+D5更新（技能化重构）：agent说明书 + 技能说明书（追加式）；术语分批全查合并去重；
+       翻译方向记录进策略书 direction 字段；RAG查证随技能迁入仍按配置开关休眠
+D6更新（共享池）：
+  - 主入口改为池子派发器：spawn_pre_translate(pool) 走共享池；传旧参数自动构建池子（向后兼容）
+  - 每个技能 execute 前 validate_pool 校验 requires（缺数据即拦），执行后写回池子 + 登记provides
+  - 本模块只保留三件事：agent说明书、工作流协调、BaseAgent封装
 """
 
 from transagent.interface import (
-    PreprocessResult, PreTranslateResult, TermTable, UserPrefs, TermSource,
+    PreprocessResult, PreTranslateResult, TermTable, UserPrefs,
 )
 from transagent.backend.core.agent_framework import (
     BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
 )
+from transagent.backend.core.shared_pool import SharedPool
 from transagent.backend.core.skills.pre_skills.strategy_formulation.scripts.strategy_skill import StrategySkill
 from transagent.backend.core.skills.pre_skills.term_extraction.scripts.term_skill import TermExtractionSkill
+from transagent.backend.core.skills.pre_skills.term_translation.scripts.term_translation_skill import TermTranslationSkill
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -40,7 +39,7 @@ PRE_AGENT_SYSTEM_PROMPT = """你是"译前Sub-Agent"——负责翻译开始前�
 你收到的文档已经由上游主agent完成结构解析（不可译区域已用{NT_n}占位符保护、可译标签用{T_n}占位符）
 和文档分块，你直接基于处理后的文本工作。
 
-你具备以下两项技能，系统按工作流调用；每次调用只会在本说明书之后追加一份技能说明书，
+你具备以下三项技能，系统按工作流调用；每次调用只会在本说明书之后追加一份技能说明书，
 你只需执行追加的那份技能对应的工作：
 
 【技能一：策略制定】（strategy_formulation）
@@ -48,14 +47,19 @@ PRE_AGENT_SYSTEM_PROMPT = """你是"译前Sub-Agent"——负责翻译开始前�
 输出：翻译策略书（JSON·含ICT子领域标签）。
 
 【技能二：术语提取】（term_extraction）
-从ICT文档中提取领域术语并确定目标语言译法，按置信度分流（正式术语/待确认）。
+从ICT文档中提取领域术语（只提术语名 + 它在文中的上下文片段，不定译法）。
+输出：术语候选列表（JSON）。
+
+【技能三：术语翻译】（term_translation）
+对已提取的术语确定目标语言译法：系统先做RAG术语库匹配（命中即复用库中译法），
+你只翻译RAG未命中的术语。
 输出：项目术语表（JSON）。
 
 工作流程（固定顺序·不可颠倒）：
 1. 必须先执行技能一，拿到ICT子领域标签后，才能执行技能二。
-2. 技能二依赖技能一的产出：术语消歧必须结合领域标签
-   （如"container"在K8s→"容器"，在物流→"集装箱"）。
-3. 长文档（多chunk）时，技能二会按chunk分批执行（每次一个部分），由系统合并各批结果并去重。
+2. 技能二依赖技能一的产出：领域标签用于判断提取哪些术语。
+3. 长文档（多chunk）时，技能二会按chunk分批执行（每次一个部分），由系统合并各批候选并去重。
+4. 技能三在候选合并后执行一次：RAG优先匹配，未命中的术语才由你翻译（附上下文消歧）。
 
 执行规则：
 - 每次调用只执行追加的那份技能说明书对应的工作，不得执行另一项技能。
@@ -68,23 +72,46 @@ PRE_AGENT_SYSTEM_PROMPT = """你是"译前Sub-Agent"——负责翻译开始前�
 # ══════════════════════════════════════════════════════════════════
 
 async def spawn_pre_translate(
-    preprocess: PreprocessResult,
-    user_prefs: UserPrefs,
+    preprocess_or_pool,
+    user_prefs: UserPrefs | None = None,
     direction: str = "auto",
 ) -> PreTranslateResult:
     """
-    译前Sub-Agent主入口（工作流协调器）。
+    译前Sub-Agent主入口（D6池子派发器·兼容旧签名）。
 
     执行顺序（写死在代码里，AI不能跳步）：
       1. 技能一·策略制定（先执行·产出领域标签）
       2. 技能二·术语提取（后执行·携带领域标签消歧）
          单chunk → 一次读全文；多chunk → 每chunk一次调用（分批全查）→ 合并去重
 
-    Args:
-        direction: "en_to_zh" | "zh_to_en" | "auto"（默认·按文档语言自动检测）
+    调用方式（二选一）：
+      - 池子路径：spawn_pre_translate(pool)（主流程·共享池已填 source_md/chunks/user_prefs）
+      - 兼容路径：spawn_pre_translate(preprocess_result, user_prefs, direction=...)（测试/演示脚本）
     """
-    full_text = preprocess.protected_md
-    chunks = preprocess.chunks
+    if isinstance(preprocess_or_pool, SharedPool):
+        pool = preprocess_or_pool
+    else:
+        # 兼容路径：由旧参数构建池子
+        preprocess = preprocess_or_pool
+        pool = SharedPool()
+        pool.preprocess_result = preprocess
+        pool.source_md = preprocess.protected_md
+        pool.chunks = preprocess.chunks
+        pool.placeholder_map = preprocess.placeholder_map
+        pool.user_prefs = user_prefs
+    return await _pre_translate_from_pool(pool, direction)
+
+
+async def _pre_translate_from_pool(
+    pool: SharedPool,
+    direction: str = "auto",
+) -> PreTranslateResult:
+    """核心工作流：从池子读上游 → 调技能 → 写回池子。"""
+    full_text = pool.source_md
+    chunks = pool.chunks
+    if not pool.user_prefs:
+        pool.user_prefs = UserPrefs()
+    user_prefs = pool.user_prefs
 
     # ── 方向解析（auto → 语言检测）──
     if direction == "auto":
@@ -93,68 +120,76 @@ async def spawn_pre_translate(
 
     # 技能实例化时注入agent说明书（技能不反向依赖agent模块·解耦）
     strategy_skill = StrategySkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
-    term_skill = TermExtractionSkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
+    extract_skill = TermExtractionSkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
+    translate_skill = TermTranslationSkill(agent_prompt=PRE_AGENT_SYSTEM_PROMPT)
 
-    # ── 步骤1：调用技能一（策略制定·翻译方向随策略书记录）──
+    # ── 步骤1：技能一（策略制定·翻译方向随策略书记录）──
+    strategy_skill.validate_pool(pool)   # requires: source_md + user_prefs
     strategy_book = await strategy_skill.execute(
         md_text=full_text, user_prefs=user_prefs, direction=direction,
     )
+    pool.strategy_book = strategy_book
+    strategy_skill.mark_pool_provided(pool)
 
-    # ── 步骤2：调用技能二（术语提取·分批全查·方向以策略书direction字段为准）──
-    batches: list[TermTable] = []
+    # ── 步骤2：技能二（术语提取·只提术语名·分批全查）──
+    extract_skill.validate_pool(pool)   # requires: source_md + strategy_book + user_prefs
+    candidates: list[str] = []
     if len(chunks) <= 1:
         print("[PreAgent] 单chunk → 技能二一次读全文")
-        batches.append(await term_skill.execute(
+        candidates = await extract_skill.execute(
             fragment=full_text, strategy=strategy_book,
             user_prefs=user_prefs, part_label="全文",
-        ))
+        )
     else:
         n = len(chunks)
         print(f"[PreAgent] 多chunk({n}) → 技能二分批全查，每chunk一次调用")
         for i, chunk in enumerate(chunks):
-            batches.append(await term_skill.execute(
+            candidates.extend(await extract_skill.execute(
                 fragment=chunk.source_text, strategy=strategy_book,
                 user_prefs=user_prefs,
                 part_label=f"第{i + 1}/{n}部分",
             ))
+    pool.term_candidates = _dedup_candidates(candidates)
+    extract_skill.mark_pool_provided(pool)
 
-    term_table = _merge_batches(batches)
+    # ── 步骤3：技能三（术语翻译·RAG优先·LLM兜底·一次）──
+    if pool.term_candidates:
+        translate_skill.validate_pool(pool)   # requires: term_candidates + strategy_book + user_prefs
+        term_table = await translate_skill.execute(
+            terms=pool.term_candidates,
+            strategy=strategy_book,
+            user_prefs=user_prefs,
+        )
+    else:
+        print("[PreAgent] 无术语候选 → 空术语表")
+        term_table = TermTable()
+    # 双语术语表（术语原文 + 译文 + 来源）写回共享池，供译中/译后/交付消费
+    pool.term_table = term_table
+    translate_skill.mark_pool_provided(pool)
 
     return PreTranslateResult(
-        chunks=preprocess.chunks,
+        chunks=chunks,
         strategy_book=strategy_book,
         term_table=term_table,
-        placeholder_map=preprocess.placeholder_map,
+        placeholder_map=pool.placeholder_map,
     )
 
 
-def _merge_batches(batches: list[TermTable]) -> TermTable:
+def _dedup_candidates(candidates: list[str]) -> list[str]:
     """
-    合并各批术语表：去重（首次译法优先）+ 统计。
+    合并各包/各chunk的术语候选：按术语名去重（保留首现）。
 
-    跨批去重规则：以"先到先得"为准——同一术语在批次1出现后，
-    批次2/3中的同术语（即使译法不同）直接丢弃。
+    跨包去重规则：以"先到先得"为准——同一术语在早出现的包中出现后，
+    后续包的同术语直接丢弃。
     """
-    merged = TermTable()
     seen: set[str] = set()
-    for b in batches:
-        for e in b.entries:
-            if e.term and e.term not in seen:
-                seen.add(e.term)
-                merged.entries.append(e)
-        for e in b.pending_entries:
-            if e.term and e.term not in seen:
-                seen.add(e.term)
-                merged.pending_entries.append(e)
-
-    merged.total_count = len(merged.entries) + len(merged.pending_entries)
-    merged.rag_hit_count = sum(b.rag_hit_count for b in batches)
-    merged.web_search_count = sum(b.web_search_count for b in batches)
-    merged.llm_gen_count = sum(
-        1 for e in (merged.entries + merged.pending_entries)
-        if e.source == TermSource.LLM_GEN.value
-    )
-    return merged
+    deduped: list[str] = []
+    for c in candidates:
+        term = str(c).strip()
+        if term and term not in seen:
+            seen.add(term)
+            deduped.append(term)
+    return deduped
 
 
 def _detect_direction(md_text: str) -> str:
@@ -196,7 +231,7 @@ class PreTranslateAgent(BaseAgent):
     def default_context(self) -> AgentContext:
         return AgentContext(
             agent_name=self.agent_name,
-            timeout_seconds=180.0,  # 策略+术语两次LLM调用，给3分钟
+            timeout_seconds=600.0,  # D7: 策略+提取分包+翻译多次LLM调用，放宽防超时重跑
         )
 
     async def execute(

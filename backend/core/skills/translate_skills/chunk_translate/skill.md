@@ -31,8 +31,9 @@ description: 逐chunk主译：术语按表强制使用·TM作参考·遵循策�
 2. **占位符保护**：
    - 看到 {NT_n} / {T_n} 占位符 → 原样保留，不翻译、不修改、不删减
    - 这些占位符代表代码/URL/命令/图片说明等受保护内容，翻译后会还原
-3. **Markdown结构保留**：
+3. **Markdown结构保留（只保留·不新增）**：
    - 标题层级（#/##/###）、列表（-、*、数字）、加粗、表格、引用原样保留
+   - **源文没有的结构一律不新增**：源文未加粗的文本不得加粗，不得凭空添加列表标记/标题层级/星号等
    - 代码块（```围栏）内容一字不改，仅整体搬移
 4. **ICT风格要求**：
    - 专业、简洁、主动语态
@@ -66,7 +67,7 @@ Deployment 控制器执行滚动更新，用新 Pod 替换旧 Pod。使用 {NT_0
 1. **Mandatory glossary usage**: Strictly follow the project glossary. Glossary terms must use the specified translation verbatim; terms marked 【不译】/notranslate must stay as-is.
    Terms not in the glossary: translate naturally per the strategy book style, do not improvise.
 2. **Placeholder protection**: {NT_n} and {T_n} placeholders must be kept verbatim — never translate, modify, or drop them.
-3. **Markdown structure**: Preserve heading levels (#/##/###), lists (-, *, numbered), bold, tables, blockquotes. Code fences (```) content must not be altered.
+3. **Markdown structure (preserve only, never add)**: Preserve heading levels (#/##/###), lists (-, *, numbered), bold, tables, blockquotes exactly as they appear in the source. Never add structure absent from the source — do not bold text that is not bold in the source, do not invent list markers, heading levels, or asterisks. Code fences (```) content must not be altered.
 4. **ICT style requirements**:
    - Professional, concise, active voice; natural, idiomatic English (not word-for-word)
    - Split run-on Chinese sentences into clear, concise English sentences

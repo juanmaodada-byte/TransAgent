@@ -5,9 +5,11 @@
  * D3 实现。
  */
 
+import { useState } from 'react';
 import { STEP_ORDER, STEP_LABELS } from '../../types';
 import type { StepKey, StepState } from '../../types';
 import type { ConnectionStatus } from '../../hooks/useTranslateSSE';
+import { Button, Clock3, Icon, Progress, StepStateIcon } from '../ui';
 import './ProgressBar.css';
 
 export interface ProgressBarProps {
@@ -23,17 +25,9 @@ export interface ProgressBarProps {
   connectionStatus: ConnectionStatus;
   /** 会话标识 */
   sessionId?: string | null;
+  /** 任务是否已经结束。结束后默认收起过程细节，只保留流程节点。 */
+  done?: boolean;
 }
-
-// ── 状态 → 图标 ──
-const STATE_ICONS: Record<StepState, string> = {
-  pending: '○',
-  in_progress: '◉',
-  completed: '✓',
-  failed: '✗',
-  skipped: '—',
-  waiting_user: '⏳',
-};
 
 // ── 连接状态配置 ──
 const CONNECTION_CONFIG: Record<ConnectionStatus, { label: string; dotClass: string }> = {
@@ -66,37 +60,76 @@ export function ProgressBar({
   elapsedSeconds,
   connectionStatus,
   sessionId,
+  done = false,
 }: ProgressBarProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const progressPct = calcProgress(steps);
   const connCfg = CONNECTION_CONFIG[connectionStatus];
+  const compact = done && !detailsOpen;
+  const completedCount = STEP_ORDER.filter(
+    (k) => steps[k] === 'completed' || steps[k] === 'skipped'
+  ).length;
 
   return (
-    <div className="progress-bar">
+    <div className={`progress-bar ${done ? 'done' : ''} ${compact ? 'compact' : ''}`}>
       {/* 顶部状态栏 */}
       <div className="progress-top-bar">
         <div className="progress-top-left">
-          <span className="progress-pct">{progressPct}%</span>
-          <span className="progress-label">翻译进度</span>
+          <span className="progress-pct">{done ? '完成' : `${progressPct}%`}</span>
+          <span className="progress-label">
+            {done ? `${completedCount}/${STEP_ORDER.length} 个流程节点已结束` : '翻译进度'}
+          </span>
         </div>
         <div className="progress-top-right">
-          <span className="progress-timer">⏱ {formatTime(elapsedSeconds)}</span>
-          <span className={`connection-dot ${connCfg.dotClass}`} />
-          <span className="connection-label">{connCfg.label}</span>
+          <span className="progress-timer">
+            <Icon icon={Clock3} size={14} />
+            {formatTime(elapsedSeconds)}
+          </span>
+          {!done && (
+            <>
+              <span className={`connection-dot ${connCfg.dotClass}`} />
+              <span className="connection-label">{connCfg.label}</span>
+            </>
+          )}
           {sessionId && (
             <span className="progress-session" title={sessionId}>
               #{sessionId.slice(0, 8)}
             </span>
           )}
+          {done && (
+            <Button
+              className="progress-detail-toggle"
+              variant="ghost"
+              size="sm"
+              onClick={() => setDetailsOpen((prev) => !prev)}
+            >
+              {detailsOpen ? '收起详情' : '查看详情'}
+            </Button>
+          )}
         </div>
       </div>
 
+      {compact && (
+        <div className="progress-flow-nodes" aria-label="翻译流程节点">
+          {STEP_ORDER.map((stepKey, index) => {
+            const state = steps[stepKey] ?? 'pending';
+            return (
+              <div key={stepKey} className={`flow-node ${state}`}>
+                <span className={`flow-dot ${state}`}>
+                  <StepStateIcon state={state} />
+                </span>
+                <span className="flow-label">{STEP_LABELS[stepKey]}</span>
+                {index < STEP_ORDER.length - 1 && <span className="flow-connector" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!compact && (
+        <>
       {/* 总体进度条 */}
-      <div className="progress-track">
-        <div
-          className="progress-fill"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
+      <Progress value={progressPct} />
 
       {/* 当前消息 */}
       {currentMessage && (
@@ -109,7 +142,7 @@ export function ProgressBar({
       {/* 步骤列表 */}
       <div className="progress-steps">
         {STEP_ORDER.map((stepKey, index) => {
-          const state = steps[stepKey];
+          const state = steps[stepKey] ?? 'pending';
           const isActive = currentStep === stepKey;
           const label = STEP_LABELS[stepKey];
 
@@ -120,7 +153,7 @@ export function ProgressBar({
             >
               <div className="step-indicator">
                 <span className={`step-badge ${state} ${isActive ? 'pulse' : ''}`}>
-                  {STATE_ICONS[state]}
+                  <StepStateIcon state={state} />
                 </span>
                 {index < STEP_ORDER.length - 1 && (
                   <div className={`step-connector ${state === 'completed' || state === 'skipped' ? 'filled' : ''}`} />
@@ -137,6 +170,8 @@ export function ProgressBar({
           );
         })}
       </div>
+        </>
+      )}
     </div>
   );
 }

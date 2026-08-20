@@ -42,6 +42,85 @@ def search_rag(term, user_id, domain="", top_k=None):
     return [_to_interface(h, uid) for h in hits]
 
 
+def search_rag_batch(terms, user_id="", domain="", top_k=None):
+    """批量检索多个术语:一次嵌入 + 一次 Chroma 查询(替代逐条 search_rag)。
+
+    D7 性能优化:term_skill 的 RAG 查证原来对每个候选术语逐条调 search_rag
+    (每词一次 bge-m3 嵌入 + 一次 Chroma query),术语多时成为译前瓶颈。
+    本函数把整批候选合成一次嵌入 + 一次 query,逐条复用新包逻辑
+    (别名确定性命中 → 语义检索 → 阈值过滤 → 近义消歧 → 置信度重映射),
+    命中判定与逐条调用完全一致。
+
+    Returns:
+        list[list[TermEntry]]: 与 terms 同序,每个术语的命中列表(可能为空)。
+    """
+    terms = [str(t) for t in (terms or [])]
+    if not terms:
+        return []
+    uid = kb_user_id(user_id)
+    dom = normalize_domain(domain)
+    k = top_k if top_k else 5
+
+    col = _rag._collection()
+    if col.count() == 0:
+        return [[] for _ in terms]
+
+    results: list[list] = [[] for _ in terms]
+    sem_idx: list[int] = []
+    sem_queries: list[str] = []
+
+    # ① 别名确定性命中(廉价·逐条·不依赖嵌入)
+    for i, t in enumerate(terms):
+        t = t.strip()
+        if not t:
+            continue
+        alias_hit = _rag.lookup_alias(t, dom, uid)
+        if alias_hit:
+            term, d, owner = alias_hit
+            got = col.get(ids=[_rag._term_id(owner, d, term)],
+                          include=["documents", "metadatas"])
+            if got.get("ids"):
+                meta = dict(got["metadatas"][0] or {})
+                meta.update({"term": got["documents"][0], "_similarity": 1.0})
+                results[i] = [_to_interface(_rag._to_term_entry(meta), uid)]
+                continue
+        sem_idx.append(i)
+        sem_queries.append(t)
+
+    # ② 语义批量检索(一次嵌入 + 一次 query)
+    if sem_idx:
+        embs = _rag.embed_batch(sem_queries)
+        where = _rag._build_where(domain=dom, user_id=uid)
+        try:
+            res = col.query(query_embeddings=embs, where=where, n_results=k)
+        except Exception as e:
+            print(f"[RAG] search_rag_batch query failed: {e}")
+            return results
+        for j, i in enumerate(sem_idx):
+            # 把多查询响应按查询切片成单查询形状,复用交付包 _parse_results
+            single = {
+                "ids": [res.get("ids", [])[j]],
+                "documents": [res.get("documents", [])[j]],
+                "distances": [res.get("distances", [])[j]],
+                "metadatas": [res.get("metadatas", [])[j]],
+            }
+            hits = [e for e in _rag._parse_results(single)
+                    if e.get("_similarity", 0.0) >= _rag.config.RAG_MIN_SIMILARITY]
+            blocked = _rag.lookup_blocked_terms(sem_queries[j])
+            if blocked:
+                hits = [e for e in hits
+                        if _rag.normalize_key(e.get("term", "")) not in blocked]
+            out = []
+            for e in hits:
+                te = _rag._to_term_entry(e)
+                te.confidence = _rag._remap_confidence(
+                    te.confidence, float(e.get("_similarity", 0.0)))
+                out.append(_to_interface(te, uid))
+            results[i] = out
+
+    return results
+
+
 def _to_interface(h, user_id: str) -> TermEntry:
     """contracts.TermEntry → interface.TermEntry(补 user_id/timestamp 字段)。
 

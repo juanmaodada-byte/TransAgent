@@ -1,21 +1,21 @@
 """
 译后Sub-Agent
 =============
-Vibe Coder A | v1.2 | 2026-08-10 (D5)
+Vibe Coder A | v1.3 | 2026-08-15 (D6)
 
 职责：译后agent说明书 + 工作流协调（按工作流调用两个技能）
 内部：技能一·质检（LLM·先执行）→ 技能二·润色（LLM·后执行·含校对）
 
-输入：source_md + draft + term_table + strategy_book
-输出：PostTranslateResult（终稿 + 质检报告 + 润色说明）
+输入：SharedPool（source_md + draft + term_table + strategy_book + aligned_pairs[可选增强]）
+输出：写回 SharedPool（qa_report + final_text + polish_notes）并返回 PostTranslateResult
 
 D2更新：继承BaseAgent框架，支持统一spawn/超时/取消/重试
-D5更新（技能化重构·目录化）：
-  - 技能目录化：core/skills/quality_inspection/（技能一·质检）、core/skills/polish/（技能二·润色）
-    —— 各含 skill.md（说明书·双方向章节合一）+ reference/ + scripts/
-  - 本模块只保留三件事：agent说明书（注明两个技能+工作流）、工作流协调、BaseAgent封装
-  - 每次LLM调用 = agent说明书 + 技能说明书（追加式·由技能full_system_prompt组装）
-  - 翻译方向以策略书 direction 字段为准；direction参数降为兼容兜底（策略书未记录时用）
+D5更新（技能化重构·目录化）：本模块只保留 agent说明书 + 工作流协调 + BaseAgent封装
+D6更新（共享池·结构化定位）：
+  - 主入口改为池子派发器：spawn_post_translate(pool) 走共享池；传旧参数自动构建池子（向后兼容）
+  - 质检技能从池子额外读取 aligned_pairs（初译稿对齐·编排器在译中后对齐）——
+    prompt 按句对展示，LLM摘抄指认，系统用 locate_quote 精确匹配定位
+  - 技能执行前 validate_pool 校验 requires，执行后写回池子 + 登记provides
 """
 
 from transagent.interface import (
@@ -24,6 +24,7 @@ from transagent.interface import (
 from transagent.backend.core.agent_framework import (
     BaseAgent, AgentContext, AgentResult, AgentRegistry, register_agent,
 )
+from transagent.backend.core.shared_pool import SharedPool
 from transagent.backend.core.skills.post_skills.quality_inspection.scripts.quality_skill import QualityInspectionSkill
 from transagent.backend.core.skills.post_skills.polish.scripts.polish_skill import PolishSkill
 
@@ -62,41 +63,72 @@ POST_AGENT_SYSTEM_PROMPT = """你是"译后Sub-Agent"——负责翻译完成后
 # ══════════════════════════════════════════════════════════════════
 
 async def spawn_post_translate(
-    source_md: str,
-    draft: str,
-    term_table: TermTable,
-    strategy_book: StrategyBook,
+    source_md_or_pool,
+    draft: str | None = None,
+    term_table: TermTable | None = None,
+    strategy_book: StrategyBook | None = None,
     direction: str = "",
 ) -> PostTranslateResult:
     """
-    译后Sub-Agent主入口（工作流协调器）。
+    译后Sub-Agent主入口（D6池子派发器·兼容旧签名）。
 
     执行顺序（写死在代码里，AI不能跳步）：
       1. 技能一·质检（先执行·产出质检报告）
       2. 技能二·润色（后执行·根据质检报告修复+润色）
 
-    Args:
-        direction: 兼容参数——翻译方向以策略书 direction 字段为准；
-                   仅当策略书未记录（direction为空）时用作兜底，默认 "en_to_zh"
+    调用方式（二选一）：
+      - 池子路径：spawn_post_translate(pool)（主流程·共享池已填 source_md/draft/term_table/
+                   strategy_book/aligned_pairs，对齐由编排器在译中后提前完成）
+      - 兼容路径：spawn_post_translate(source_md=..., draft=..., term_table=..., strategy_book=...)
+                  （测试/演示脚本·无句对时质检自动降级为分段定位）
     """
+    if isinstance(source_md_or_pool, SharedPool):
+        pool = source_md_or_pool
+    else:
+        # 兼容路径：由旧参数构建池子
+        pool = SharedPool()
+        pool.source_md = source_md_or_pool
+        pool.draft = draft or ""
+        pool.term_table = term_table or TermTable()
+        pool.strategy_book = strategy_book or StrategyBook()
+    return await _post_translate_from_pool(pool, direction)
+
+
+async def _post_translate_from_pool(
+    pool: SharedPool,
+    direction: str = "",
+) -> PostTranslateResult:
+    """核心工作流：从池子读 → 调技能 → 写回池子。"""
     # 方向单一事实来源=策略书：未记录时用调用参数兜底
-    if not strategy_book.direction:
-        strategy_book.direction = direction or "en_to_zh"
+    if not pool.strategy_book.direction:
+        pool.strategy_book.direction = direction or "en_to_zh"
+    strategy_book = pool.strategy_book
 
     qa_skill = QualityInspectionSkill(agent_prompt=POST_AGENT_SYSTEM_PROMPT)
     polish_skill = PolishSkill(agent_prompt=POST_AGENT_SYSTEM_PROMPT)
 
-    # ── Step 1: 调用技能一（质检）──
+    # ── Step 1: 技能一（质检·按句对定位）──
+    qa_skill.validate_pool(pool)   # requires: source_md + draft + term_table + strategy_book
     qa_result = await qa_skill.execute(
-        source_md=source_md, draft=draft,
-        term_table=term_table, strategy_book=strategy_book,
+        source_md=pool.source_md, draft=pool.draft,
+        term_table=pool.term_table, strategy_book=strategy_book,
+        aligned_pairs=pool.aligned_pairs,     # D6：初译稿对齐句对（可空·自动降级）
+        user_prefs=pool.user_prefs,           # D6：风格参考（可空）
+        placeholder_map=pool.placeholder_map, # D6：占位符核对（可空）
     )
+    pool.qa_report = qa_result
+    qa_skill.mark_pool_provided(pool)
 
-    # ── Step 2: 调用技能二（润色·含校对）──
+    # ── Step 2: 技能二（润色·含校对）──
+    polish_skill.validate_pool(pool)   # requires: qa_report 已写回
     final_text, polish_notes = await polish_skill.execute(
-        source_md=source_md, draft=draft,
+        source_md=pool.source_md, draft=pool.draft,
         qa_result=qa_result, strategy_book=strategy_book,
+        term_table=pool.term_table,
     )
+    pool.final_text = final_text
+    pool.polish_notes = polish_notes
+    polish_skill.mark_pool_provided(pool)
 
     return PostTranslateResult(
         final_text=final_text,
@@ -135,7 +167,7 @@ class PostTranslateAgent(BaseAgent):
     def default_context(self) -> AgentContext:
         return AgentContext(
             agent_name=self.agent_name,
-            timeout_seconds=180.0,  # 质检+润色两次LLM调用，给3分钟
+            timeout_seconds=600.0,  # D8.1：窗口化质检+润色为多次调用（并行），deepseek空响应重试下留足余量
         )
 
     async def execute(

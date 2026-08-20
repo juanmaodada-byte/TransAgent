@@ -4,6 +4,9 @@ __pycache__/
 .env
 .venv/
 venv/
+
+# 设置页保存的 LLM 密钥（含真实 api_key，禁止入库）
+data/user_llm.json
 *.egg-info/
 dist/
 build/
@@ -11,6 +14,11 @@ build/
 # Test output / scratch
 workspace/
 *.bak
+
+# Document module runtime artifacts (regenerated at runtime)
+runs/
+.runtime/
+scripts/lib/
 
 # Downloaded model weights (re-download from HuggingFace at setup)
 backend/knowledge/rag/rag/models/

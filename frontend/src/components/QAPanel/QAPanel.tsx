@@ -6,6 +6,7 @@
  */
 
 import type { QAResult, QAIssue } from '../../types';
+import { Badge, CheckCircle2, Icon, MapPin, Sparkles } from '../ui';
 import './QAPanel.css';
 
 export interface QAPanelProps {
@@ -27,6 +28,7 @@ const SEVERITY_CONFIG: Record<QAIssue['severity'], { label: string; className: s
   critical: { label: '严重', className: 'sev-critical' },
   major: { label: '主要', className: 'sev-major' },
   minor: { label: '轻微', className: 'sev-minor' },
+  suggestion: { label: '建议', className: 'sev-suggestion' },
 };
 
 /** 分数 → 颜色/等级 */
@@ -42,8 +44,10 @@ export function QAPanel({ qa }: QAPanelProps) {
   const totalLevel = scoreLevel(qa.total_score);
   const hasIssues = qa.issues.length > 0;
 
-  // 按严重程度排序：critical → major → minor
-  const severityRank: Record<QAIssue['severity'], number> = { critical: 0, major: 1, minor: 2 };
+  // 按严重程度排序：critical → major → minor → suggestion
+  const severityRank: Record<QAIssue['severity'], number> = {
+    critical: 0, major: 1, minor: 2, suggestion: 3,
+  };
   const sortedIssues = [...qa.issues].sort(
     (a, b) => severityRank[a.severity] - severityRank[b.severity]
   );
@@ -61,7 +65,14 @@ export function QAPanel({ qa }: QAPanelProps) {
         <div className="qa-level-badge">
           <span className={`qa-level ${totalLevel.className}`}>{totalLevel.text}</span>
           <span className="qa-issue-count">
-            {hasIssues ? `${qa.issues.length} 个问题` : '无问题 ✨'}
+            {hasIssues ? (
+              `${qa.issues.length} 个问题`
+            ) : (
+              <>
+                <Icon icon={CheckCircle2} size={13} />
+                无问题
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -99,11 +110,24 @@ export function QAPanel({ qa }: QAPanelProps) {
               const sev = SEVERITY_CONFIG[issue.severity];
               return (
                 <li key={i} className={`qa-issue-item ${sev.className}`}>
-                  <span className={`qa-severity ${sev.className}`}>{sev.label}</span>
+                  <Badge className={`qa-severity ${sev.className}`} variant="outline">
+                    {sev.label}
+                  </Badge>
                   <span className="qa-issue-type">{issue.type}</span>
                   <span className="qa-issue-desc">{issue.description}</span>
+                  {issue.current && issue.suggestion && (
+                    <span className="qa-issue-fix">
+                      当前「{issue.current}」→ 建议「{issue.suggestion}」
+                    </span>
+                  )}
+                  {issue.must_fix === false && (
+                    <span className="qa-issue-optional">可改可不改</span>
+                  )}
                   {issue.location && (
-                    <span className="qa-issue-location">📍 {issue.location}</span>
+                    <span className="qa-issue-location">
+                      <Icon icon={MapPin} size={13} />
+                      {issue.location}
+                    </span>
                   )}
                 </li>
               );
@@ -115,7 +139,9 @@ export function QAPanel({ qa }: QAPanelProps) {
       {/* 总结 */}
       {qa.summary && (
         <div className="qa-summary">
-          <span className="qa-summary-icon">💡</span>
+          <span className="qa-summary-icon">
+            <Icon icon={Sparkles} size={18} />
+          </span>
           <p>{qa.summary}</p>
         </div>
       )}

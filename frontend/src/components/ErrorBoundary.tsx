@@ -7,6 +7,7 @@
 
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { AlertTriangle, Button, Card, Icon } from './ui';
 
 interface Props {
   children: ReactNode;
@@ -38,14 +39,16 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       return (
-        <div className="card error-boundary-fallback">
-          <div className="error-boundary-icon">⚠️</div>
+        <Card className="error-boundary-fallback">
+          <div className="error-boundary-icon">
+            <Icon icon={AlertTriangle} size={32} />
+          </div>
           <p className="error-boundary-title">该区域渲染失败</p>
           <p className="error-boundary-msg">{this.state.message}</p>
-          <button className="btn-secondary" onClick={this.handleReset} type="button">
+          <Button variant="outline" onClick={this.handleReset}>
             重试
-          </button>
-        </div>
+          </Button>
+        </Card>
       );
     }
     return this.props.children;

@@ -11,43 +11,22 @@
   min-width: 140px;
 }
 
-.export-main-icon {
-  font-size: 1rem;
-}
-
-.export-caret {
-  font-size: 0.8rem;
-  opacity: 0.8;
-}
-
-/* ── 导出中 spinner ── */
-.export-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  display: inline-block;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── 下拉面板 ── */
+/* ── 下拉面板（浮层：白底 + 细边框 + 柔和投影） ──
+   注意：组件已用 Portal 渲染到 <body>，故用 position: fixed + 视口定位
+   （普通 absolute 会被 FinalCard 的 overflow:hidden 与消息滚动容器裁掉）。 */
 .export-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
+  position: fixed;
+  top: 0;
   left: 0;
   min-width: 320px;
-  background: #fff;
-  border: 1px solid var(--color-gray-200);
+  max-width: min(480px, calc(100vw - 24px));
+  background: var(--popover);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  padding: 12px;
-  z-index: 50;
-  animation: dropdown-in 0.2s ease-out;
+  padding: 8px;
+  z-index: 1000;
+  animation: dropdown-in 0.18s ease-out;
 }
 
 @keyframes dropdown-in {
@@ -62,17 +41,17 @@
 }
 
 .export-dropdown-title {
-  font-size: 0.78rem;
-  color: var(--color-gray-500);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
   padding: 4px 8px 8px;
-  border-bottom: 1px solid var(--color-gray-100);
-  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
 }
 
 .export-options {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .export-option {
@@ -81,20 +60,26 @@
   gap: 10px;
   padding: 10px 8px;
   border: none;
+  border-radius: var(--radius-sm);
   background: transparent;
-  border-radius: var(--radius-md);
+  font-family: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background-color 0.15s;
 }
 
 .export-option:hover {
-  background: var(--color-gray-50);
+  background: var(--accent);
 }
 
 .export-option-icon {
-  font-size: 1.3rem;
+  display: inline-flex;
+  color: var(--muted-foreground);
   flex-shrink: 0;
+}
+
+.export-option:hover .export-option-icon {
+  color: var(--primary);
 }
 
 .export-option-body {
@@ -104,20 +89,20 @@
 }
 
 .export-option-label {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--color-gray-800);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
 }
 
 .export-option-hint {
-  font-size: 0.75rem;
-  color: var(--color-gray-400);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
   margin-top: 1px;
 }
 
 .export-option-ext {
-  font-size: 0.75rem;
-  color: var(--color-gray-400);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
   font-family: var(--font-mono);
   flex-shrink: 0;
 }

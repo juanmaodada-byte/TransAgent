@@ -8,6 +8,11 @@ Vibe Coder A | v1.1 | 2026-08-07 (D2)
 
 D2更新：集成agent_framework，使用统一spawn接口获得超时/重试/计时能力。
 
+D6更新（共享池·结构化定位）：
+  - 每次翻译创建 per-session 的 SharedPool，预处理产出解包进池子
+  - 三个 Sub-Agent 改收池子（spawn_*_translate(pool)），各自读/写池子，技能级 requires 校验
+  - 初译稿对齐提前到译中之后（align_chunks 逐块对齐·带 chunk_id）→ 质检按句对结构化定位
+
 用法：
     orchestrator = Orchestrator(user_id="user_001")
     session = await orchestrator.translate(
@@ -26,7 +31,8 @@ from transagent.interface import (
 from transagent.backend.config import get_config
 from transagent.backend.pipeline.preprocess import preprocess
 from transagent.backend.pipeline.restore import restore_placeholders
-from transagent.backend.pipeline.aligner import align_sentences
+from transagent.backend.pipeline.aligner import align_sentences, align_chunks
+from transagent.backend.core.shared_pool import SharedPool
 from transagent.backend.core.pre_agent import spawn_pre_translate
 from transagent.backend.core.translate_agent import spawn_translate, spawn_translate_parallel
 from transagent.backend.core.post_agent import spawn_post_translate
@@ -54,6 +60,7 @@ class Orchestrator:
         file_path: str,
         on_progress=None,           # Callable[[str, StepState, str], None]
         on_terms_pending=None,      # async/sync Callable[[session, list], list] → 用户确认后的术语
+        on_draft_confirm=None,      # D8.1 MVP: async/sync Callable[[session, list], None] → 译中后中英对照确认断点
     ) -> TranslationSession:
         """执行完整翻译流程。
 
@@ -61,6 +68,8 @@ class Orchestrator:
         显著加速长文档（5+ chunks）的翻译过程。
         术语确认：on_terms_pending 支持 async 与 sync 两种回调，
         签名统一为 (session, pending_terms) -> list[TermEntry]。
+        D8.1 MVP：on_draft_confirm 为译中完成后的中英对照确认断点回调，
+        签名 (session, aligned_rows) -> None；提供即暂停等确认，缺省不暂停。
         """
 
         session = TranslationSession(
@@ -74,22 +83,36 @@ class Orchestrator:
             if on_progress:
                 on_progress(step, state, msg)
 
+        # D6：创建本次会话的共享池（per-session·绝不跨会话共享）
+        pool = SharedPool(session_id=session.session_id)
+
         try:
             # ── Step 1: 预处理（Vibe Coder B）──
             await self._step_preprocess(session, _progress)
 
+            # D6：预处理产出解包进共享池
+            pool.source_md = session.preprocess_result.protected_md
+            pool.chunks = session.preprocess_result.chunks
+            pool.placeholder_map = session.preprocess_result.placeholder_map
+            pool.preprocess_result = session.preprocess_result
+            pool.user_prefs = session.user_prefs
+
             # ── Step 2: 译前 Sub-Agent ──
-            await self._step_pre_translate(session, _progress)
+            await self._step_pre_translate(session, pool, _progress)
 
             # ── ⏸️ 术语确认断点 ──
             if session.pending_terms:
                 await self._step_terminology_confirm(session, _progress, on_terms_pending)
 
             # ── Step 3: 译中 Sub-Agent ──
-            await self._step_translate(session, _progress)
+            await self._step_translate(session, pool, _progress)
+
+            # ── ⏸️ 中英对照确认断点（D8.1 MVP·译中后暂停等用户确认）──
+            if on_draft_confirm:
+                await self._step_draft_confirm(session, pool, _progress, on_draft_confirm)
 
             # ── Step 4: 译后 Sub-Agent ──
-            await self._step_post_translate(session, _progress)
+            await self._step_post_translate(session, pool, _progress)
 
             # ── Step 5: 交付 + 学习 ──
             await self._step_deliver_and_learn(session, _progress)
@@ -119,6 +142,13 @@ class Orchestrator:
         progress("input_convert", StepState.IN_PROGRESS, "正在转换文档格式…")
         try:
             result = preprocess(session.file_path)
+            # D8.1：宽松护栏——提取后正文过长（deepseek-v4-flash 长输入空响应·建议拆分）
+            max_chars = get_config().app.max_source_chars
+            src_len = len(result.protected_md or "")
+            if src_len > max_chars:
+                raise ValueError(
+                    f"文档正文过长（{src_len}字，上限{max_chars}字）。"
+                    "当前版本建议将文档拆分为多个短文档后分别翻译。")
             session.preprocess_result = result
             progress("input_convert", StepState.COMPLETED,
                      f"预处理完成: {result.token_estimate_total} tokens | "
@@ -130,21 +160,21 @@ class Orchestrator:
 
     # ── Step 2: 译前 ───────────────────────────────────────────────
 
-    async def _step_pre_translate(self, session: TranslationSession, progress):
+    async def _step_pre_translate(self, session: TranslationSession, pool, progress):
         progress("pre_translate", StepState.IN_PROGRESS, "译前Sub-Agent工作中（策略+术语）…")
 
         # D2：使用框架spawn包装
         agent_ctx = AgentContext(
             agent_name="PreTranslateAgent",
-            timeout_seconds=180.0,
+            timeout_seconds=600.0,   # D7: 术语提取分包+重试可能较长，放宽超时防重跑
             parent_session_id=session.session_id,
         )
 
         try:
+            # D6：传入共享池——译前读 source_md/user_prefs，写回 strategy_book/term_table
             result: AgentResult = await spawn(
                 spawn_pre_translate,
-                session.preprocess_result,
-                session.user_prefs,
+                pool,
                 context=agent_ctx,
             )
 
@@ -247,13 +277,13 @@ class Orchestrator:
 
     # ── Step 3: 译中 ───────────────────────────────────────────────
 
-    async def _step_translate(self, session: TranslationSession, progress):
+    async def _step_translate(self, session: TranslationSession, pool, progress):
         chunk_count = len(session.preprocess_result.chunks) if session.preprocess_result else 0
         mode_label = "并行" if self.parallel_chunks and chunk_count > 1 else "串行"
         progress("translate", StepState.IN_PROGRESS,
                  f"译中Sub-Agent工作中（{mode_label}·{chunk_count} chunk）…")
 
-        # TM搜索
+        # TM搜索 → 写进共享池（译中主译技能从池子读）
         tm_refs = []
         try:
             full_source = session.preprocess_result.protected_md
@@ -261,12 +291,13 @@ class Orchestrator:
             tm_refs = search_tm(full_source, self.user_id)
         except Exception:
             pass
+        pool.tm_refs = tm_refs
 
         try:
             # D2：使用框架spawn包装，获得超时保护+计时
             agent_ctx = AgentContext(
                 agent_name="TranslateAgent",
-                timeout_seconds=300.0,
+                timeout_seconds=600.0,
                 parent_session_id=session.session_id,
             )
 
@@ -274,10 +305,7 @@ class Orchestrator:
                 # 并行chunk翻译（D2新增能力·方向以策略书direction字段为准）
                 result: AgentResult = await spawn(
                     spawn_translate_parallel,
-                    session.preprocess_result.chunks,
-                    session.pre_translate_result.term_table,
-                    session.pre_translate_result.strategy_book,
-                    tm_refs,
+                    pool,
                     max_concurrency=self.max_chunk_concurrency,
                     parent_context=agent_ctx,
                     context=agent_ctx,
@@ -286,10 +314,7 @@ class Orchestrator:
                 # 串行chunk翻译（传统模式）
                 result: AgentResult = await spawn(
                     spawn_translate,
-                    session.preprocess_result.chunks,
-                    session.pre_translate_result.term_table,
-                    session.pre_translate_result.strategy_book,
-                    tm_refs,
+                    pool,
                     context=agent_ctx,
                 )
 
@@ -305,6 +330,10 @@ class Orchestrator:
                     msg += " | 一致性: 预检通过"
                 else:
                     msg += f" | 一致性: 修复{cr.issues_found}处不一致"
+            # D6：初译稿进池子即对齐（供质检按句对定位·系统权威）
+            pool.aligned_pairs = align_chunks(pool.chunks, pool.chunk_drafts)
+            if pool.aligned_pairs:
+                msg += f" | 句对齐{len(pool.aligned_pairs)}"
             progress("translate", StepState.COMPLETED, msg)
 
         except Exception as e:
@@ -312,25 +341,51 @@ class Orchestrator:
             session.degradation_level = DegradationLevel.L2
             raise
 
+    # ── ⏸️ 中英对照确认断点（D8.1 MVP）──────────────────────────────
+
+    async def _step_draft_confirm(self, session, pool, progress, on_draft_confirm):
+        """译中完成后的中英对照确认断点：展示源↔初译对齐，等待用户确认后继续译后。
+
+        与术语确认断点同构：回调内阻塞等待 /api/confirm_draft 唤醒；超时自动继续。
+        """
+        rows: list[dict] = []
+        if pool.aligned_pairs:
+            pmap = pool.placeholder_map
+            rows = [
+                {
+                    "source_seg": restore_placeholders(p.source_seg, pmap) if pmap else p.source_seg,
+                    "target_seg": restore_placeholders(p.target_seg, pmap) if pmap else p.target_seg,
+                    "chunk_id": p.chunk_id,
+                }
+                for p in pool.aligned_pairs
+            ]
+        progress("draft_confirm", StepState.WAITING_USER,
+                 f"初译完成，请核对中英对照（{len(rows)}句）")
+        if on_draft_confirm:
+            if asyncio.iscoroutinefunction(on_draft_confirm):
+                await on_draft_confirm(session, rows)
+            else:
+                on_draft_confirm(session, rows)
+        progress("draft_confirm", StepState.COMPLETED, "用户确认初译，继续译后")
+
     # ── Step 4: 译后 ───────────────────────────────────────────────
 
-    async def _step_post_translate(self, session: TranslationSession, progress):
+    async def _step_post_translate(self, session: TranslationSession, pool, progress):
         progress("post_translate", StepState.IN_PROGRESS, "译后Sub-Agent工作中（质检→润色）…")
 
         # D2：使用框架spawn包装
         agent_ctx = AgentContext(
             agent_name="PostTranslateAgent",
-            timeout_seconds=180.0,
+            timeout_seconds=600.0,  # D8.1：窗口化质检+润色多次调用，deepseek空响应重试下留足余量
             parent_session_id=session.session_id,
         )
 
         try:
+            # D6：传入共享池——译后读 source_md/draft/term_table/strategy_book/aligned_pairs，
+            #     写回 qa_report/final_text/polish_notes
             result: AgentResult = await spawn(
                 spawn_post_translate,
-                session.preprocess_result.protected_md,
-                session.translate_result.draft,
-                session.pre_translate_result.term_table,
-                session.pre_translate_result.strategy_book,
+                pool,
                 context=agent_ctx,
             )
 
@@ -417,10 +472,15 @@ class Orchestrator:
             qa_score = session.post_translate_result.qa_report.total_score
             if qa_score >= 8.5:
                 for pair in session.aligned_pairs:
+                    tgt = pair.target_seg if hasattr(pair, 'target_seg') else pair.get("target_seg", "")
+                    src = pair.source_seg if hasattr(pair, 'source_seg') else pair.get("source_seg", "")
+                    # D8：空译行（合并块后续源句/缺译）无对应译文，不写TM
+                    if not (tgt or "").strip() or not (src or "").strip():
+                        continue
                     from transagent.interface import TMEntry
                     tm_entries.append(TMEntry(
-                        source_seg=pair.source_seg if hasattr(pair, 'source_seg') else pair.get("source_seg", ""),
-                        target_seg=pair.target_seg if hasattr(pair, 'target_seg') else pair.get("target_seg", ""),
+                        source_seg=src,
+                        target_seg=tgt,
                         quality_score=qa_score,
                         domain=domain,
                         user_id=self.user_id,

@@ -45,6 +45,8 @@ class ConsistencySkill(Skill):
     temperature = 0.3
     max_tokens = 8000
     json_mode = False
+    requires = {"chunk_drafts", "chunks", "term_table", "strategy_book"}  # D6共享池
+    provides = {"draft", "consistency_report"}    # D6共享池：产出初译稿 + 一致性报告
 
     async def execute(
         self,

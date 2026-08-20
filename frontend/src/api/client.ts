@@ -12,6 +12,8 @@ import type {
   ExportFormat,
   EvolutionData,
   TermEntry,
+  LLMSettings,
+  LLMSettingsInput,
 } from '../types';
 
 /** API 基础地址，可通过环境变量 VITE_API_BASE_URL 覆盖 */
@@ -73,6 +75,64 @@ export async function confirmTerms(
 }
 
 // ══════════════════════════════════════════════════════════════════
+// POST /api/confirm_draft
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 用户确认译中初译（中英对照），唤醒暂停的翻译任务继续译后。
+ * 对应 server.py confirm_draft()
+ */
+export async function confirmDraft(sessionId: string): Promise<{ accepted: boolean }> {
+  const formData = new FormData();
+  formData.append('session_id', sessionId);
+
+  const res = await fetch(`${BASE_URL}/api/confirm_draft`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`初译确认失败: HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// POST /api/convert_to_md
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 独立文档转Markdown工具（D8.1 MVP）：返回可复制的 MD 文本。
+ * 对应 server.py convert_to_md_api()
+ */
+export interface ConvertToMdResult {
+  md?: string;
+  char_count?: number;
+  over_limit?: boolean;
+  limit?: number;
+  format?: string;
+  warnings?: string[];
+  error?: string;
+}
+
+export async function convertToMd(file: File): Promise<ConvertToMdResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${BASE_URL}/api/convert_to_md`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`文档转换失败: HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════════
 // GET /api/export/{session_id}
 // ══════════════════════════════════════════════════════════════════
 
@@ -101,6 +161,40 @@ export async function fetchEvolution(
     throw new Error(`获取进化数据失败: HTTP ${res.status}`);
   }
 
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 设置（LLM API 配置）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 获取 LLM API 配置（脱敏）。
+ * 对应 server.py get_llm_settings()
+ */
+export async function fetchLLMSettings(): Promise<LLMSettings> {
+  const res = await fetch(`${BASE_URL}/api/settings/llm`);
+  if (!res.ok) {
+    throw new Error(`获取设置失败: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * 保存 LLM API 配置（api_key 留空则保留现有密钥）。
+ * 对应 server.py update_llm_settings()
+ */
+export async function saveLLMSettings(
+  payload: LLMSettingsInput
+): Promise<LLMSettings> {
+  const res = await fetch(`${BASE_URL}/api/settings/llm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`保存设置失败: HTTP ${res.status}`);
+  }
   return res.json();
 }
 

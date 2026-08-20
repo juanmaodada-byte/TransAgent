@@ -58,6 +58,8 @@ class ChunkTranslateSkill(Skill):
     temperature = 0.2
     max_tokens = 4000
     json_mode = False
+    requires = {"chunks", "term_table", "strategy_book"}  # D6共享池：读chunk + 术语 + 策略（TM可空）
+    provides = {"chunk_drafts"}                   # D6共享池：产出逐chunk译文
 
     async def execute(
         self,

@@ -73,6 +73,7 @@ class FormatType(str, Enum):
     """输入文件格式"""
     MARKDOWN = "md"
     DOCX = "docx"
+    DOC = "doc"
     PDF = "pdf"
     TEXT = "text"
     IMAGE = "image"
@@ -102,7 +103,113 @@ class ConvertResult:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 三、结构解析与分块相关（Vibe Coder B 产出）
+# 三、文档结构块与资源（Vibe Coder B 产出·D1 新增契约）
+# ══════════════════════════════════════════════════════════════════
+
+@dataclass
+class DocumentArtifactManifest:
+    """原生文档处理产物清单。服务端持有，不暴露给 Agent 翻译契约。"""
+    document_id: str = ""
+    extraction_id: str = ""
+    source_format: str = ""
+    source_path: str = ""
+    normalized_docx_path: str = ""
+    xliff_path: str = ""
+    skeleton_path: str = ""
+    work_dir: str = ""
+    filter_config_id: str = "okf_openxml"
+    source_lang: str = "en"
+    target_lang: str = "zh-CN"
+    fidelity_level: str = "native"
+    conversion_warnings: list = field(default_factory=list)
+    source_sha256: str = ""
+    normalized_docx_sha256: str = ""
+    normalized_from_doc: bool = False
+    libreoffice_executable_path: str = ""
+    libreoffice_version: str = ""
+    original_structure_snapshot: dict = field(default_factory=dict)
+    filter_config_sha256: str = ""
+    conversion_metadata: dict = field(default_factory=dict)
+    delivery_quality: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        allowed = {"native", "normalized", "approximate"}
+        if self.fidelity_level not in allowed:
+            raise ValueError(
+                f"DOCUMENT_UNSUPPORTED_FORMAT: invalid fidelity_level: "
+                f"{self.fidelity_level}"
+            )
+
+    def to_dict(self) -> dict:
+        return {
+            "document_id": self.document_id,
+            "extraction_id": self.extraction_id,
+            "source_format": self.source_format,
+            "source_path": self.source_path,
+            "normalized_docx_path": self.normalized_docx_path,
+            "xliff_path": self.xliff_path,
+            "skeleton_path": self.skeleton_path,
+            "work_dir": self.work_dir,
+            "filter_config_id": self.filter_config_id,
+            "source_lang": self.source_lang,
+            "target_lang": self.target_lang,
+            "fidelity_level": self.fidelity_level,
+            "conversion_warnings": list(self.conversion_warnings),
+            "source_sha256": self.source_sha256,
+            "normalized_docx_sha256": self.normalized_docx_sha256,
+            "normalized_from_doc": self.normalized_from_doc,
+            "libreoffice_executable_path": self.libreoffice_executable_path,
+            "libreoffice_version": self.libreoffice_version,
+            "original_structure_snapshot": dict(self.original_structure_snapshot),
+            "filter_config_sha256": self.filter_config_sha256,
+            "conversion_metadata": dict(self.conversion_metadata),
+            "delivery_quality": dict(self.delivery_quality),
+        }
+
+
+@dataclass
+class DocumentBlock:
+    """文档结构块。P0 文档结构的唯一事实来源。"""
+    block_id: str = ""
+    block_type: str = ""          # heading | paragraph | list | table | image | code
+    source_text: str = ""
+    order: int = 0
+    metadata: dict = field(default_factory=dict)
+    text: str = ""
+    # metadata 按类型的最小语义:
+    #   heading:   {"level": int}
+    #   list:      {"list_type": "ordered"|"unordered", "level": int, "item_index": int}
+    #   table:     {"rows": int, "cols": int, "cells": [[str, ...], ...]}
+    #   image:     {"asset_id": str, "alt_text": str}
+    #   code:      {"language": str, "is_inline": bool}
+    #   paragraph: {} (无必填字段; 行内格式使用 "runs")
+
+    def __post_init__(self) -> None:
+        if self.text and not self.source_text:
+            self.source_text = self.text
+        elif self.source_text and not self.text:
+            self.text = self.source_text
+
+
+@dataclass
+class DocumentAsset:
+    """文档资源（图片等）。"""
+    asset_id: str = ""
+    path: str = ""                 # assets_dir 内的 session 相对路径
+    media_type: str = ""           # image/png, image/jpeg 等
+    source_block_id: str = ""      # 关联的 DocumentBlock.block_id
+
+
+@dataclass
+class TranslatedBlock:
+    """翻译后的结构块。"""
+    block_id: str = ""
+    target_text: str = ""
+    status: str = ""               # translated | needs_review | failed
+
+
+# ══════════════════════════════════════════════════════════════════
+# 四、结构解析与分块相关（Vibe Coder B 产出）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -130,6 +237,10 @@ class Chunk:
     token_estimate: int = 0
     heading_path: list = field(default_factory=list)  # 标题路径 ["## 概述", "### 安装"]
     order: int = 0                 # 在原文档中的序号
+    # D1 新增字段
+    block_ids: list = field(default_factory=list)           # 参与翻译的 block ID，每个 block 恰好出现一次
+    context_block_ids: list = field(default_factory=list)   # 仅作为上下文的 block ID
+    token_count: int = 0           # 实际 tokenizer 计算结果
 
 
 @dataclass
@@ -140,10 +251,44 @@ class PreprocessResult:
     placeholder_map: Optional[PlaceholderMap] = None
     token_estimate_total: int = 0
     chunk_count: int = 0
+    # D1 新增字段（向后兼容·带默认值）
+    blocks: list = field(default_factory=list)                      # list[DocumentBlock]
+    assets_dir: str = ""                                             # session assets 目录路径
+    assets: list = field(default_factory=list)                       # list[DocumentAsset]
+    conversion_warnings: list = field(default_factory=list)          # list[str]
+    schema_version: str = "2.0"
+    source_document_path: str = ""
+    normalized_docx_path: str = ""
+    xliff_path: str = ""
+    fidelity_level: str = ""
+    source_lang: str = ""
+    target_lang: str = ""
+    work_dir: str = ""
+    document_manifest: Optional[DocumentArtifactManifest] = None
+    original_structure_snapshot: dict = field(default_factory=dict)
+    okapi_filter_config_id: str = ""
+    okapi_filter_config_sha256: str = ""
+    extraction_id: str = ""
+
+
+@dataclass
+class NativeTranslationResult:
+    """D4 DOCX-native translation orchestration result."""
+    source_document_path: str = ""
+    output_document_path: str = ""
+    preprocess_result: Optional[PreprocessResult] = None
+    translated_blocks: list = field(default_factory=list)   # list[DocumentBlock]
+    source_lang: str = "en"
+    target_lang: str = "zh-CN"
+    session_id: str = ""
+    extraction_id: str = ""
+    fidelity_level: str = "native"
+    warnings: list = field(default_factory=list)
+    summary: dict = field(default_factory=dict)
 
 
 # ══════════════════════════════════════════════════════════════════
-# 四、术语与知识库相关（成员 C 接口 + Vibe Coder A 消费）
+# 五、术语与知识库相关（成员 C 接口 + Vibe Coder A 消费）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -215,7 +360,7 @@ class TMEntry:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 五、翻译策略书（Vibe Coder A 译前Sub-Agent 产出）
+# 六、翻译策略书（Vibe Coder A 译前Sub-Agent 产出）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -252,7 +397,7 @@ class StrategyBook:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 六、翻译阶段结果（Vibe Coder A 各 Sub-Agent 产出）
+# 七、翻译阶段结果（Vibe Coder A 各 Sub-Agent 产出）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -284,10 +429,21 @@ class TranslateResult:
 @dataclass
 class QAIssue:
     """质检问题。译后Sub-Agent的质检LLM产出。"""
-    location: str = ""             # "chunk_1 段落3"
-    severity: str = "minor"        # "critical" | "major" | "minor"
+    id: str = ""                   # "I001" 唯一编号
+    location: str = ""             # 给人看的定位（"chunk_1 句对7"·系统匹配后自动生成）
+    severity: str = "minor"        # "critical" | "major" | "minor" | "suggestion"
+    nature: str = ""               # "error" | "improvement"
     type: str = ""                 # "漏译" | "术语错误" | "翻译腔" | "代码误译" | "风格偏差"
+    current: str = ""              # 当前存在问题的原文
+    suggestion: str = ""           # 建议修改结果
     description: str = ""
+    reason: str = ""               # 修改原因
+    must_fix: bool = False         # 是否必须修复
+    # ── 结构化定位（D6共享池·初译稿对齐后由系统匹配确定，LLM只负责摘抄指认）──
+    chunk_id: str = ""             # 哪一块（"chunk_001"·未定位为空）
+    pair_index: int = -1           # 句对序号（pool.aligned_pairs 下标·未定位为-1）
+    source_seg: str = ""           # 源文句子原文（LLM摘抄·系统匹配后替换为权威句对源句）
+    target_seg: str = ""           # 译文句子原文（LLM摘抄·系统匹配后替换为权威句对译句）
 
 
 @dataclass
@@ -310,8 +466,12 @@ class QAResult:
             "code_integrity": self.code_integrity,
             "fluency": self.fluency,
             "style_match": self.style_match,
-            "issues": [{"location": i.location, "severity": i.severity,
-                        "type": i.type, "description": i.description}
+            "issues": [{"id": i.id, "location": i.location, "severity": i.severity,
+                        "nature": i.nature, "type": i.type, "current": i.current,
+                        "suggestion": i.suggestion, "description": i.description,
+                        "reason": i.reason, "must_fix": i.must_fix,
+                        "chunk_id": i.chunk_id, "pair_index": i.pair_index,
+                        "source_seg": i.source_seg, "target_seg": i.target_seg}
                        for i in self.issues],
             "summary": self.summary,
         }
@@ -326,7 +486,7 @@ class PostTranslateResult:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 七、学习与进化相关
+# 八、学习与进化相关
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -362,7 +522,7 @@ class EvolutionReport:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 八、用户偏好（成员 C 接口）
+# 九、用户偏好（成员 C 接口）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -391,7 +551,7 @@ class UserPrefs:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 九、翻译会话（全流程状态容器）
+# 十、翻译会话（全流程状态容器）
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -409,6 +569,7 @@ class TranslationSession:
         "pre_translate": StepState.PENDING,
         "terminology_confirm": StepState.PENDING,
         "translate": StepState.PENDING,
+        "draft_confirm": StepState.PENDING,   # D8.1 MVP：中英对照确认断点
         "post_translate": StepState.PENDING,
         "restore": StepState.PENDING,
         "align": StepState.PENDING,
@@ -469,7 +630,7 @@ class TranslationSession:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 十、前后端 API 契约
+# 十一、前后端 API 契约
 # ══════════════════════════════════════════════════════════════════
 
 # ── POST /api/upload ──────────────────────────────────────────────
@@ -504,6 +665,7 @@ UPLOAD_RESPONSE_SCHEMA = {
 
 # ── GET /api/export/{session_id}?format=docx|html|bilingual ──────
 # Response: binary file download
+#   bilingual → bilingual.docx（源文/译文左右对照表格·句级对齐）
 
 # ── GET /api/evolution/{user_id} ──────────────────────────────────
 # Response:
@@ -519,7 +681,7 @@ EVOLUTION_RESPONSE_SCHEMA = {
 
 
 # ══════════════════════════════════════════════════════════════════
-# 十一、模块接口函数签名（各模块暴露的方法）
+# 十二、模块接口函数签名（各模块暴露的方法）
 # ══════════════════════════════════════════════════════════════════
 
 # Vibe Coder B — backend/pipeline/
@@ -535,11 +697,11 @@ EVOLUTION_RESPONSE_SCHEMA = {
 
 # Vibe Coder A — backend/core/
 # ────────────────────────────
-# async spawn_pre_translate(preprocess: PreprocessResult, user_prefs: UserPrefs) -> PreTranslateResult
-# async spawn_translate(chunks: list[Chunk], term_table: TermTable,
-#                        strategy_book: StrategyBook, tm_refs: list[TMEntry]) -> TranslateResult
-# async spawn_post_translate(source_md: str, draft: str,
-#                             term_table: TermTable, strategy_book: StrategyBook) -> PostTranslateResult
+# D6起：三个 spawn_* 均为"共享池派发器"——既可传 SharedPool（主流程），也可传旧参数（向后兼容）：
+# async spawn_pre_translate(pool: SharedPool) -> PreTranslateResult        # 旧签名：spawn_pre_translate(preprocess, user_prefs)
+# async spawn_translate(pool: SharedPool) -> TranslateResult              # 旧签名：spawn_translate(chunks, term_table, strategy_book, tm_refs)
+# async spawn_translate_parallel(pool: SharedPool, ...) -> TranslateResult
+# async spawn_post_translate(pool: SharedPool) -> PostTranslateResult     # 旧签名：spawn_post_translate(source_md, draft, term_table, strategy_book)
 # async translate_document(file_path: str, user_id: str,
 #                           on_progress: Callable) -> TranslationSession  # 主入口
 
@@ -561,3 +723,14 @@ EVOLUTION_RESPONSE_SCHEMA = {
 # v1.1 | 2026-08-07 | D2 Vibe Coder A: 新增 agent_framework.py（Sub-Agent调用框架·内部模块）
 #                         BaseAgent/AgentContext/AgentResult/spawn/spawn_parallel 均为 core/ 内部实现
 #                         接口契-约本身无变更，三个 Sub-Agent 的 spawn_* 函数签名保持向后兼容
+# v1.2 | 2026-08-15 | D6 Vibe Coder A: QAIssue 新增结构化定位字段（chunk_id/pair_index/source_seg/target_seg）
+#                          —— 供共享池初译稿对齐后系统匹配定位（LLM只负责摘抄指认）
+#                          AlignedPair 本版本起在初译稿对齐（align_chunks）中填充 chunk_id
+#                          仅新增字段·向后兼容
+# v2.0 | 2026-08-11 | D1 新增 DocumentBlock / DocumentAsset / TranslatedBlock 契约 +
+#                     PreprocessResult 向后兼容字段(blocks/assets_dir/assets/conversion_warnings/schema_version) +
+#                     Chunk 扩展字段(block_ids/context_block_ids/token_count)
+# v2.1 | 2026-08-13 | D3 新增原生 DOCX 处理元数据字段与 DocumentBlock.text 兼容字段
+# v2.2 | 2026-08-13 | D4 新增 NativeTranslationResult 原生 DOCX 翻译编排结果
+# v2.3 | 2026-08-14 | DOC 输入归一化 manifest 兼容字段(normalized_docx_sha256/normalized_from_doc/libreoffice_executable_path/libreoffice_version)
+# v2.4 | 2026-08-14 | PDF 近似 DOCX 转换 manifest 兼容字段(conversion_metadata)

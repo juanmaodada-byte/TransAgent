@@ -49,6 +49,10 @@ async def chat(
         )
     except Exception as e:
         print(f"[LLM] 主力模型 DeepSeek 失败: {e}")
+        # 备选模型未配置 → 直接抛清晰错误，不做注定失败的切换
+        if not cfg.backup_api_key:
+            raise RuntimeError(
+                f"主力模型失败且备选模型未配置(QWEN_API_KEY未设置): {e}") from e
         # 切换备选模型
         try:
             print("[LLM] 切换到备选模型 通义千问...")
@@ -70,8 +74,11 @@ async def _call_with_retry(
     stream: bool,
     use_backup: bool,
 ) -> str | object:
-    """带重试的LLM调用"""
+    """带重试的LLM调用。
 
+    D7加固（json_mode间歇空响应）：json_mode 重试耗尽后，改用普通模式重试
+    （去掉 response_format——疑似空响应元凶），从返回文本中抽取JSON。
+    """
     if use_backup:
         model = cfg.backup_model
         api_key = cfg.backup_api_key
@@ -86,54 +93,92 @@ async def _call_with_retry(
 
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=cfg.request_timeout_seconds,  # D7.1：接线请求超时（此前是死配置·单次调用默认600s上限）
+    )
 
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
     ]
 
-    extra_kwargs: dict = {}
+    # 单阶段重试：普通模式调用（不传 response_format·提示词约束JSON）+ json_mode 解析
+    # D7: response_format=json_object 疑似导致模型间歇性返回空内容 → 弃用，
+    #     靠提示词要求输出JSON + 正则抽取（普通模式返回真实文本·稳定很多）
+    ok, result = await _retry_loop(
+        client, model, messages, temperature, max_tokens,
+        json_mode=json_mode, retries=cfg.max_retries, cfg=cfg)
+    if ok:
+        return result
+    raise RuntimeError(f"重试{cfg.max_retries}次均失败: {result}")
+
+
+async def _single_call(
+    client, model: str, messages: list, temperature: float,
+    max_tokens: int, json_mode: bool,
+) -> str | object:
+    """单次LLM调用：普通模式（不传 response_format·提示词约束JSON）；json_mode → 解析/抽取JSON。"""
+    cfg = get_config().llm
+    _extra = {}
+    if cfg.reasoning_effort:  # D9.1：限制推理深度（空响应根因=推理烧光max_tokens）
+        _extra["reasoning_effort"] = cfg.reasoning_effort
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=False,  # 暂不启用流式（SSE层实现）
+        **_extra,
+    )
+    content = response.choices[0].message.content or ""
+    # D7.1：空响应视为可重试失败。实测 deepseek-v4-flash 约半数调用 HTTP200 但 content 为空：
+    #       此前非 json 模式把空串当成功 → 润色静默产出空终稿；json 模式靠 _extract_json 兜底重试。
+    #       统一在此拦截 → 走重试 → 重试耗尽后由技能内部降级兜底（质检8.0基础分 / 润色交付初译稿）。
+    if not content.strip():
+        raise ValueError(f"LLM返回空内容 (model={model})")
     if json_mode:
-        extra_kwargs["response_format"] = {"type": "json_object"}
+        return _extract_json(content)
+    return content
 
+
+def _extract_json(content: str):
+    """从文本中解析JSON：直接解析 → 失败则正则抽取 {…} 块（容忍围栏/附加文字）。"""
+    import json
+    import re
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        match = re.search(r'\{[\s\S]*\}', content)
+        if match:
+            return json.loads(match.group(0))
+        raise ValueError(f"JSON解析失败: {content[:200]}")
+
+
+async def _retry_loop(
+    client, model: str, messages: list, temperature: float,
+    max_tokens: int, json_mode: bool, retries: int, cfg,
+) -> tuple:
+    """重试循环：成功返回 (True, 结果)；耗尽返回 (False, 最后错误)。"""
     last_error = None
-    for attempt in range(cfg.max_retries):
+    for attempt in range(retries):
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=False,  # 暂不启用流式（SSE层实现）
-                **extra_kwargs,
-            )
-            content = response.choices[0].message.content or ""
-
-            if json_mode:
-                import json
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    # 尝试提取JSON块
-                    import re
-                    match = re.search(r'\{[\s\S]*\}', content)
-                    if match:
-                        return json.loads(match.group(0))
-                    raise ValueError(f"JSON解析失败: {content[:200]}")
-
-            return content
-
+            result = await _single_call(
+                client, model, messages, temperature, max_tokens, json_mode)
+            return True, result
         except Exception as e:
             last_error = e
-            if attempt < cfg.max_retries - 1:
-                delay = cfg.retry_delay_seconds * (2 ** attempt)  # 1s → 2s → 4s
+            if attempt < retries - 1:
+                # D9.1：空响应（HTTP200 但 content 空）非限流·固定 1s 快速重试；
+                #       其他错误（429/超时等）才用指数退避。
+                if isinstance(e, ValueError) and "空内容" in str(e):
+                    delay = 1.0
+                else:
+                    delay = cfg.retry_delay_seconds * (2 ** attempt)  # 1s → 2s → 4s
                 print(f"[LLM] 第{attempt + 1}次重试失败，{delay}s后重试...")
                 await asyncio.sleep(delay)
-            else:
-                raise RuntimeError(f"重试{cfg.max_retries}次均失败: {last_error}")
-
-    raise RuntimeError(f"重试{cfg.max_retries}次均失败: {last_error}")
+    return False, last_error
 
 
 async def chat_stream(
@@ -149,7 +194,10 @@ async def chat_stream(
     cfg = get_config().llm
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=cfg.primary_api_key, base_url=cfg.primary_base_url)
+    client = AsyncOpenAI(
+        api_key=cfg.primary_api_key, base_url=cfg.primary_base_url,
+        timeout=cfg.request_timeout_seconds,  # D7.1：接线请求超时
+    )
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -157,12 +205,16 @@ async def chat_stream(
     ]
 
     try:
+        _extra = {}
+        if cfg.reasoning_effort:  # D9.1：限制推理深度（空响应根因=推理烧光max_tokens）
+            _extra["reasoning_effort"] = cfg.reasoning_effort
         stream = await client.chat.completions.create(
             model=cfg.primary_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+            **_extra,
         )
         async for chunk in stream:
             if chunk.choices[0].delta.content:

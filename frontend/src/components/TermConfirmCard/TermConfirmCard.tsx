@@ -8,8 +8,9 @@
  *   SSE terms_pending 事件 → 本卡片 → 用户确认 → confirmTerms API → 翻译恢复
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { TermEntry, TermAction } from '../../types';
+import { ArrowRight, Badge, Button, Check, Clock3, Icon, SourceIcon } from '../ui';
 import './TermConfirmCard.css';
 
 export interface TermConfirmCardProps {
@@ -21,6 +22,8 @@ export interface TermConfirmCardProps {
   onConfirm: (confirmed: TermEntry[]) => void;
   /** 跳过确认（不提交，后端超时会自动接受） */
   onSkip?: () => void;
+  /** 确认超时（秒）：超时后后端自动接受并继续 */
+  timeoutSeconds?: number;
 }
 
 /** 单条术语的编辑状态 */
@@ -47,30 +50,23 @@ function sourceClass(source: string): string {
   }
 }
 
-/** 术语来源 → 图标 */
-function sourceIcon(source: string): string {
-  switch (source) {
-    case 'RAG命中':
-      return '📚';
-    case 'Web搜索':
-      return '🌐';
-    case 'LLM生成':
-      return '🤖';
-    case '用户确认':
-      return '👤';
-    case '白名单':
-      return '🛡️';
-    default:
-      return '🏷️';
-  }
-}
-
 export function TermConfirmCard({
   terms,
   submitting = false,
   onConfirm,
   onSkip,
+  timeoutSeconds = 300,
 }: TermConfirmCardProps) {
+  // 确认超时倒计时（提醒用户及时操作）
+  const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds);
+
+  useEffect(() => {
+    setSecondsLeft(timeoutSeconds);
+    const timer = setInterval(() => {
+      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [timeoutSeconds, terms]);
   // 初始化编辑状态（index → 可编辑内容）
   const [edits, setEdits] = useState<Record<number, EditState>>(() => {
     const init: Record<number, EditState> = {};
@@ -114,9 +110,13 @@ export function TermConfirmCard({
     <div className="term-confirm-card">
       <div className="term-confirm-header">
         <div className="term-confirm-title-row">
-          <span className="term-confirm-icon">⏳</span>
+          <span className="term-confirm-icon">
+            <Icon icon={Clock3} size={18} />
+          </span>
           <h3 className="term-confirm-title">请确认术语译法</h3>
-          <span className="term-confirm-badge">{terms.length} 个待确认</span>
+          <Badge variant="warning" className="term-confirm-badge">
+            {terms.length} 个待确认
+          </Badge>
         </div>
         <p className="term-confirm-desc">
           以下为本次提取的全部术语，翻译已暂停。请确认或修改译法，确认后继续翻译。
@@ -138,7 +138,8 @@ export function TermConfirmCard({
                 <div className="term-edit-meta">
                   {term.source && (
                     <span className={`term-source-badge ${sourceClass(term.source)}`}>
-                      {sourceIcon(term.source)} {term.source}
+                      <SourceIcon source={term.source} />
+                      {term.source}
                     </span>
                   )}
                   {term.domain && (
@@ -147,7 +148,9 @@ export function TermConfirmCard({
                 </div>
               </div>
 
-              <div className="term-edit-arrow">→</div>
+              <div className="term-edit-arrow">
+                <Icon icon={ArrowRight} size={16} />
+              </div>
 
               <div className="term-edit-target">
                 <input
@@ -192,29 +195,38 @@ export function TermConfirmCard({
       {/* 底部操作 */}
       <div className="term-confirm-footer">
         <span className="term-confirm-tip">
-          {allTranslated
-            ? '确认后将以高置信度写入术语库'
-            : '标为「保留原文」的术语将不翻译'}
+          {secondsLeft <= 60 ? (
+            <span className="term-confirm-countdown urgent">
+              <Icon icon={Clock3} size={14} /> {secondsLeft} 秒后未确认将自动接受并继续翻译
+            </span>
+          ) : (
+            <>
+              {allTranslated
+                ? '确认后将以高置信度写入术语库'
+                : '标为「保留原文」的术语将不翻译'}
+              <span className="term-confirm-countdown">
+                （{Math.ceil(secondsLeft / 60)} 分钟内未确认将自动接受）
+              </span>
+            </>
+          )}
         </span>
         <div className="term-confirm-buttons">
           {onSkip && (
-            <button
-              className="btn-secondary"
+            <Button
+              variant="outline"
               onClick={onSkip}
               disabled={submitting}
-              type="button"
             >
               跳过
-            </button>
+            </Button>
           )}
-          <button
-            className="btn-primary"
+          <Button
             onClick={handleConfirm}
             disabled={submitting}
-            type="button"
+            icon={!submitting ? <Icon icon={Check} size={15} /> : undefined}
           >
-            {submitting ? '提交中…' : '✅ 确认并继续翻译'}
-          </button>
+            {submitting ? '提交中…' : '确认并继续翻译'}
+          </Button>
         </div>
       </div>
     </div>

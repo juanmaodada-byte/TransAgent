@@ -92,7 +92,12 @@ function getBaseUrl(): string {
 
 // ── Hook ──
 
-export function useTranslateSSE(): UseTranslateSSEReturn {
+export interface UseTranslateSSEOptions {
+  /** 每次 SSE 事件回调（供 useProjectRunner 消费，转成对话消息/文件） */
+  onEvent?: (event: { type: string } & Record<string, unknown>) => void;
+}
+
+export function useTranslateSSE(options?: UseTranslateSSEOptions): UseTranslateSSEReturn {
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(createInitialSteps);
   const [currentStep, setCurrentStep] = useState<StepKey | null>(null);
   const [currentMessage, setCurrentMessage] = useState('');
@@ -113,15 +118,11 @@ export function useTranslateSSE(): UseTranslateSSEReturn {
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── 计时器 ──
+  // onEvent 用 ref 保持稳定，避免 processEvent 依赖抖动
+  const onEventRef = useRef(options?.onEvent);
+  onEventRef.current = options?.onEvent;
 
-  const startTimer = useCallback(() => {
-    stopTimer();
-    setElapsedSeconds(0);
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
-  }, []);
+  // ── 计时器 ──
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -129,6 +130,14 @@ export function useTranslateSSE(): UseTranslateSSEReturn {
       timerRef.current = null;
     }
   }, []);
+
+  const startTimer = useCallback(() => {
+    stopTimer();
+    setElapsedSeconds(0);
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+  }, [stopTimer]);
 
   // ── 步骤更新 ──
 
@@ -191,6 +200,15 @@ export function useTranslateSSE(): UseTranslateSSEReturn {
         }
         case 'final': {
           setFinalText(data.final_text as string);
+          if (typeof data.draft_text === 'string' && data.draft_text.trim()) {
+            setDraftChunks((prev) => [
+              ...prev,
+              {
+                chunk_id: 'draft',
+                text_chunk: data.draft_text as string,
+              },
+            ]);
+          }
           setRealSessionId(data.session_id as string);
           break;
         }
@@ -199,6 +217,8 @@ export function useTranslateSSE(): UseTranslateSSEReturn {
           break;
         }
         case 'error': {
+          // D9.1：degraded 降级非致命，保持连接以接收后续 draft/final 事件
+          if (data.code === 'degraded') break;
           setError(data.message as string);
           setConnectionStatus('error');
           stopTimer();
@@ -212,6 +232,9 @@ export function useTranslateSSE(): UseTranslateSSEReturn {
           break;
         }
       }
+
+      // 统一回调给外部消费方（useProjectRunner）
+      onEventRef.current?.({ type: eventType, ...data });
     },
     [updateStep, stopTimer]
   );

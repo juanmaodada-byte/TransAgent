@@ -13,6 +13,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import type { UploadResponse } from '../../types';
 import { uploadFile } from '../../api/client';
 import { mockUploadFile, isMockMode } from '../../api/mock';
+import { AlertTriangle, Button, Icon, SendHorizontal } from '../ui';
 import './PasteInput.css';
 
 export interface PasteInputProps {
@@ -146,19 +147,19 @@ export function PasteInput({ onUploadComplete, onError }: PasteInputProps) {
           )}
         </div>
 
-        <button
-          className="btn-primary paste-start-btn"
+        <Button
+          className="paste-start-btn"
           onClick={handleStart}
           disabled={isEmpty || overLimit || uploading}
-          type="button"
+          icon={!uploading ? <Icon icon={SendHorizontal} size={15} /> : undefined}
         >
           {uploading ? '上传中…' : '开始翻译'}
-        </button>
+        </Button>
       </div>
 
       {error && (
         <div className="paste-error">
-          <span>⚠️</span>
+          <Icon icon={AlertTriangle} size={15} />
           <span>{error}</span>
         </div>
       )}

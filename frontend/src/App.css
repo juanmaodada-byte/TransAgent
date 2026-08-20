@@ -1,45 +1,92 @@
 /* ══════════════════════════════════════════════════════════════════
-   TransAgent 全局样式
-   ===================
-   CSS 变量、Reset、布局框架。
+   TransAgent 全局样式 — shadcn/ui 风格设计系统（浅色）
+   ===============================================================
+   设计原则：less is more
+   · 单一语义色板（background / foreground / muted / border / primary …）
+   · 克制的信息层级：用字号 / 字重 / 颜色深浅表达，而非边框与彩底
+   · 卡片统一"细边框 + 无投影"，投影只用于浮层
+   · 全局聚焦环（focus ring）统一 4px ring + 2px offset
    ══════════════════════════════════════════════════════════════════ */
 
-/* ── CSS 变量（主题色） ── */
+/* ── 设计 Token ── */
 :root {
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-light: #dbeafe;
-  --color-success: #22c55e;
-  --color-success-light: #dcfce7;
-  --color-warning: #f59e0b;
-  --color-warning-light: #fef3c7;
-  --color-error: #ef4444;
-  --color-error-light: #fee2e2;
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5db;
-  --color-gray-400: #9ca3af;
-  --color-gray-500: #6b7280;
-  --color-gray-600: #4b5563;
-  --color-gray-700: #374151;
-  --color-gray-800: #1f2937;
-  --color-gray-900: #111827;
+  /* 基础色板（语义化，跟随 shadcn/ui 命名） */
+  --background: #ffffff;
+  --background-subtle: #fafafa; /* zinc-50：应用画布/侧栏底色 */
+  --foreground: #18181b;        /* zinc-900 */
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #2563eb;           /* blue-600 */
+  --primary-hover: #1d4ed8;     /* blue-700 */
+  --primary-foreground: #f8fafc;
+  --secondary: #f4f4f5;         /* zinc-100 */
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;  /* zinc-500 */
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;       /* red-600 */
+  --destructive-foreground: #fafafa;
+  --success: #16a34a;           /* green-600 */
+  --warning: #ea580c;           /* orange-600 */
+  --border: #e4e4e7;            /* zinc-200 */
+  --input: #d4d4d8;             /* zinc-300：输入框边框稍深 */
+  --ring: #2563eb;
+  --ring-offset: #ffffff;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas,
-    'Courier New', monospace;
+  /* 语义浅底（用于 badge / 提示块） */
+  --primary-light: #eff6ff;      /* blue-50 */
+  --success-light: #f0fdf4;      /* green-50 */
+  --warning-light: #fff7ed;      /* orange-50 */
+  --destructive-light: #fef2f2;  /* red-50 */
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* 中性色梯度（图表/表格等需要处） */
+  --gray-50: #fafafa;
+  --gray-100: #f4f4f5;
+  --gray-200: #e4e4e7;
+  --gray-300: #d4d4d8;
+  --gray-400: #a1a1aa;
+  --gray-500: #71717a;
+  --gray-600: #52525b;
+  --gray-700: #3f3f46;
+  --gray-800: #27272a;
+  --gray-900: #18181b;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
-    0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  /* ── 字体 ── */
+  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
+    Consolas, 'Courier New', monospace;
+
+  /* ── 字号层级（less is more：档位少而分明） ── */
+  --text-xs: 0.75rem;    /* 12px · 元信息/时间戳/角标 */
+  --text-sm: 0.875rem;   /* 14px · UI 正文基准（shadcn 基准） */
+  --text-base: 1rem;     /* 16px · 正文/卡片标题 */
+  --text-lg: 1.125rem;   /* 18px · 小节标题 */
+  --text-xl: 1.25rem;    /* 20px · 面板/消息标题 */
+  --text-2xl: 1.5rem;    /* 24px · 页面标题 */
+  --text-3xl: 1.875rem;  /* 30px · 空态主标题/关键数字 */
+
+  /* ── 字重层级 ── */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ── 圆角 ── */
+  --radius-sm: 6px;   /* 按钮/输入框 */
+  --radius-md: 8px;   /* 卡片内块 */
+  --radius-lg: 12px;  /* 卡片/浮层 */
+  --radius-full: 9999px;
+
+  /* ── 阴影（仅浮层使用；卡片一律用边框分隔） ── */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
 }
 
 /* ── Reset ── */
@@ -55,23 +102,45 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   font-family: var(--font-sans);
-  color: var(--color-gray-800);
-  background: var(--color-gray-50);
+  font-size: var(--text-sm);
   line-height: 1.6;
+  color: var(--foreground);
+  background: var(--background-subtle);
   min-height: 100vh;
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--primary);
   text-decoration: none;
 }
 
-a:hover {
-  color: var(--color-primary-hover);
+/* 全局聚焦环：统一的 2px ring-offset + 4px ring */
+:focus-visible {
+  outline: none;
+}
+
+/* ── 滚动条（柔和、跟随主题） ── */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ── App Shell ── */
@@ -89,63 +158,40 @@ a:hover {
   padding: 24px 20px 48px;
 }
 
-/* ── 通用工具类 ── */
-.card {
-  background: #fff;
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
+/* ── 旧变量兼容别名（迁移过渡；新代码请直接用新 token） ── */
+:root {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-light: var(--primary-light);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-error: var(--destructive);
+  --color-error-light: var(--destructive-light);
+  --color-gray-50: var(--gray-50);
+  --color-gray-100: var(--gray-100);
+  --color-gray-200: var(--gray-200);
+  --color-gray-300: var(--gray-300);
+  --color-gray-400: var(--gray-400);
+  --color-gray-500: var(--gray-500);
+  --color-gray-600: var(--gray-600);
+  --color-gray-700: var(--gray-700);
+  --color-gray-800: var(--gray-800);
+  --color-gray-900: var(--gray-900);
 }
 
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 24px;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
+/* ── 通用文字工具类（信息层级） ── */
+.text-muted {
+  color: var(--muted-foreground);
 }
 
-.btn-primary:hover {
-  background: var(--color-primary-hover);
+.text-sm {
+  font-size: var(--text-sm);
 }
 
-.btn-primary:active {
-  transform: scale(0.98);
-}
-
-.btn-primary:disabled {
-  background: var(--color-gray-300);
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 24px;
-  background: #fff;
-  color: var(--color-gray-700);
-  border: 1px solid var(--color-gray-300);
-  border-radius: var(--radius-md);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.btn-secondary:hover {
-  background: var(--color-gray-50);
-  border-color: var(--color-gray-400);
+.text-xs {
+  font-size: var(--text-xs);
 }
 
 /* ── 响应式 ── */

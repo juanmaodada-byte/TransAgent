@@ -113,8 +113,10 @@ class StrategySkill(Skill):
     description = "分析文档领域/难度/风格，产出翻译策略书（含ICT子领域标签与翻译方向）"
     skill_dir = "pre_skills/strategy_formulation"
     temperature = 0.3
-    max_tokens = 2000
+    max_tokens = 8000  # D9.1：推理型模型思考耗token·过小→空响应
     json_mode = True
+    requires = {"source_md", "user_prefs"}        # D6共享池：读全文抽样 + 用户偏好
+    provides = {"strategy_book"}                  # D6共享池：产出策略书
 
     async def execute(
         self,

@@ -1,0 +1,160 @@
+/* ══════════════════════════════════════════════════════════════════
+   DraftConfirmCard 样式（D8.1 MVP）
+   ══════════════════════════════════════════════════════════════════ */
+
+.draft-confirm-card {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: confirm-in 0.28s ease-out;
+}
+
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── 头部 ── */
+.draft-confirm-header {
+  background: var(--warning-light);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  padding: 14px 20px;
+}
+
+.draft-confirm-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draft-confirm-icon {
+  display: inline-flex;
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.draft-confirm-title {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+  flex: 1;
+}
+
+.draft-confirm-desc {
+  font-size: var(--text-sm);
+  color: var(--gray-600);
+  margin-top: 4px;
+}
+
+/* ── 中英两栏对照表 ── */
+.draft-confirm-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.draft-confirm-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.draft-confirm-table th {
+  position: sticky;
+  top: 0;
+  background: var(--muted);
+  text-align: left;
+  padding: 8px 16px;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.draft-confirm-table td {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.draft-confirm-table tr:last-child td {
+  border-bottom: none;
+}
+
+.draft-confirm-table tbody tr:hover {
+  background: var(--background-subtle);
+}
+
+.draft-confirm-idx {
+  width: 36px;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.draft-confirm-src {
+  color: var(--foreground);
+}
+
+.draft-confirm-tgt {
+  color: var(--foreground);
+  background: var(--background-subtle);
+}
+
+/* ── 底部 ── */
+.draft-confirm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--background-subtle);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.draft-confirm-tip {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.draft-confirm-countdown {
+  color: var(--gray-500);
+}
+
+.draft-confirm-countdown.urgent {
+  color: var(--warning);
+  font-weight: var(--fw-semibold);
+}
+
+.draft-confirm-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .draft-confirm-table th,
+  .draft-confirm-table td {
+    padding: 6px 10px;
+  }
+
+  .draft-confirm-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .draft-confirm-buttons {
+    flex-direction: column;
+  }
+}

@@ -27,6 +27,7 @@ import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
 import java from 'react-syntax-highlighter/dist/esm/languages/prism/java';
 import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
 import type { ComponentProps } from 'react';
+import { Button, Check, Copy, Icon, Image } from '../ui';
 import './TranslateViewer.css';
 
 // 注册语言（PrismLight 需要显式注册才能高亮）
@@ -84,7 +85,6 @@ const LANG_DISPLAY: Record<string, string> = {
   bash: 'Bash',
   yaml: 'YAML',
   json: 'JSON',
-  yaml: 'YAML',
   markup: 'HTML',
   go: 'Go',
   java: 'Java',
@@ -113,7 +113,10 @@ function ViewerImage({
   if (error || !src) {
     return (
       <div className="viewer-image-placeholder">
-        <span>🖼️ 图片不可用</span>
+        <span>
+          <Icon icon={Image} size={16} />
+          图片不可用
+        </span>
         {alt && <span className="viewer-image-alt">{alt}</span>}
       </div>
     );
@@ -159,17 +162,19 @@ function ViewerCodeBlock({
       <div className="viewer-code-header">
         <span className="viewer-code-lang">{langDisplay}</span>
         {showCopy && (
-          <button
+          <Button
             className="viewer-copy-btn"
+            variant="ghost"
+            size="sm"
             onClick={() => {
               onCopy(code);
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}
-            type="button"
+            icon={<Icon icon={copied ? Check : Copy} size={13} />}
           >
-            {copied ? '✓ 已复制' : '复制'}
-          </button>
+            {copied ? '已复制' : '复制'}
+          </Button>
         )}
       </div>
       <SyntaxHighlighter

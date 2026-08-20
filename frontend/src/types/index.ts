@@ -34,9 +34,9 @@ export type TermSource =
   | '用户确认'
   | '白名单';
 
-export type FormatType = 'md' | 'docx' | 'pdf' | 'text' | 'image';
+export type FormatType = 'md' | 'docx' | 'doc' | 'pdf' | 'text' | 'image';
 
-export type ExportFormat = 'docx' | 'html' | 'bilingual';
+export type ExportFormat = 'md' | 'docx' | 'html' | 'bilingual';
 
 // ══════════════════════════════════════════════════════════════════
 // 二、翻译步骤定义（UI展示用）
@@ -49,6 +49,7 @@ export const STEP_ORDER = [
   'pre_translate',
   'terminology_confirm',
   'translate',
+  'draft_confirm',
   'post_translate',
   'restore',
   'align',
@@ -65,6 +66,7 @@ export const STEP_LABELS: Record<StepKey, string> = {
   pre_translate: '译前分析',
   terminology_confirm: '术语确认',
   translate: '翻译中',
+  draft_confirm: '中英对照确认',
   post_translate: '译后处理',
   restore: '占位符还原',
   align: '句级对齐',
@@ -142,10 +144,16 @@ export interface StrategyBook {
 
 /** 质检问题 */
 export interface QAIssue {
+  id?: string;
   location: string;
-  severity: 'critical' | 'major' | 'minor';
+  severity: 'critical' | 'major' | 'minor' | 'suggestion';
+  nature?: 'error' | 'improvement';
   type: string;
+  current?: string;
+  suggestion?: string;
   description: string;
+  reason?: string;
+  must_fix?: boolean;
 }
 
 /** 质检报告 */
@@ -230,6 +238,12 @@ export interface SSEFinalEvent {
   type: 'final';
   final_text: string;
   session_id: string;
+  /** 三栏句对齐（源句|初译句|终译句） */
+  aligned_rows?: Array<{
+    source_seg: string;
+    draft_seg: string;
+    final_seg: string;
+  }>;
 }
 
 export interface SSEEvolutionEvent extends EvolutionReport {
@@ -262,3 +276,47 @@ export type SSEEvent =
   | SSEEvolutionEvent
   | SSEErrorEvent
   | SSEDoneEvent;
+
+// ══════════════════════════════════════════════════════════════════
+// 五、设置（LLM API 配置）
+// ══════════════════════════════════════════════════════════════════
+
+/** LLM 服务商（后端 KNOWN_PROVIDERS） */
+export interface LLMProvider {
+  id: string;
+  label: string;
+  default_base_url: string;
+  models: string[];
+}
+
+/** 单个 LLM 通道（脱敏视图） */
+export interface LLMChannel {
+  provider: string;
+  model: string;
+  has_key: boolean;
+  key_masked: string;
+  base_url: string;
+}
+
+/** GET /api/settings/llm 响应 */
+export interface LLMSettings {
+  providers: LLMProvider[];
+  primary: LLMChannel;
+  backup: LLMChannel;
+}
+
+/** POST /api/settings/llm 请求体 */
+export interface LLMSettingsInput {
+  primary: {
+    provider: string;
+    model: string;
+    api_key: string;
+    base_url: string;
+  };
+  backup: {
+    provider: string;
+    model: string;
+    api_key: string;
+    base_url: string;
+  };
+}

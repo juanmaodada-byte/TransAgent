@@ -3,6 +3,7 @@
  */
 
 import { Link } from 'react-router-dom';
+import { Activity, Badge, Icon, Languages } from '../ui';
 import './Header.css';
 
 export function Header() {
@@ -10,9 +11,11 @@ export function Header() {
     <header className="header">
       <div className="header-inner">
         <Link to="/" className="header-logo">
-          <span className="header-icon">⚙️</span>
+          <span className="header-icon">
+            <Icon icon={Languages} size={20} />
+          </span>
           <span className="header-title">TransAgent</span>
-          <span className="header-subtitle">ICT翻译智能体</span>
+          <Badge variant="secondary" className="header-subtitle">ICT翻译智能体</Badge>
         </Link>
         <nav className="header-nav">
           <a
@@ -22,6 +25,7 @@ export function Header() {
             className="header-health-link"
             title="后端健康检查"
           >
+            <Icon icon={Activity} size={14} />
             API状态
           </a>
         </nav>

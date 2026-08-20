@@ -68,6 +68,12 @@ class Skill(ABC):
 
     与agent解耦：agent说明书通过 __init__ 注入（agent_prompt），
     技能本身不知道也不关心agent是谁。
+
+    D6新增（共享池）：
+      - requires: 本技能从池子拿取的 artifact 名（set）
+      - provides: 本技能放回池子的 artifact 名（set）
+      - validate_pool(pool)：执行前由agent工作流调用，缺数据即抛错
+      - mark_pool_provided(pool)：执行成功后登记产出
     """
     name: str = ""
     description: str = ""
@@ -75,6 +81,8 @@ class Skill(ABC):
     temperature: float = 0.3
     max_tokens: int = 4000
     json_mode: bool = False
+    requires: set = set()          # D6：从共享池拿取的 artifact 名
+    provides: set = set()          # D6：放回共享池的 artifact 名
 
     def __init__(self, agent_prompt: str = ""):
         self.agent_prompt = agent_prompt   # agent说明书（由工作流注入·可空）
@@ -89,6 +97,23 @@ class Skill(ABC):
         if self.agent_prompt:
             return f"{self.agent_prompt}\n\n{self.system_prompt}"
         return self.system_prompt
+
+    def validate_pool(self, pool) -> None:
+        """
+        执行前校验共享池：requires 声明的数据必须齐备，缺则抛错拦住。
+        由 agent 工作流在 execute 前调用；同时登记 consumers 审计。
+        """
+        missing = pool.check_missing(self.requires)
+        if missing:
+            raise RuntimeError(
+                f"[Skill:{self.name}] 共享池缺数据: {missing} "
+                f"(requires={sorted(self.requires)})"
+            )
+        pool.mark_consumed(self.requires, agent=self.name)
+
+    def mark_pool_provided(self, pool) -> None:
+        """执行成功后登记 provides 到池子（providers 审计）。"""
+        pool.mark_provided(self.provides, agent=self.name)
 
     @abstractmethod
     async def execute(self, **kwargs) -> Any:

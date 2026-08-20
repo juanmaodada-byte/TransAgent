@@ -237,13 +237,13 @@ async def spawn(
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
-                # 清理
+                # 清理：取消并吸收剩余子任务的异常
+                # 注意：不能用「except CancelledError: pass 逐个 await」——若外层任务
+                # 恰在此处被 task.cancel() 取消，会把外层取消一并吞掉（run_translate 继续跑）。
+                # gather(return_exceptions=True) 只吸收子任务结果；外层取消会经 gather 自身传播。
                 for task in pending:
                     task.cancel()
-                    try:
-                        await task
-                    except (asyncio.CancelledError, Exception):
-                        pass
+                await asyncio.gather(*pending, return_exceptions=True)
 
                 if cancel_task in done:
                     # 取消信号被触发
@@ -301,11 +301,14 @@ async def spawn(
             return agent_result
 
         except asyncio.CancelledError:
+            # 关键：必须重新抛出取消异常（不能 return）。
+            # 否则客户端断开时 server 的 task.cancel() 被吞掉，run_translate 任务
+            # 会继续跑完整条翻译管线（LLM 调用不停止），「暂停」形同虚设。
             agent_result.status = AgentStatus.CANCELLED
             agent_result.error = "Task cancelled"
             agent_result.elapsed_seconds = time.time() - start if 'start' in dir() else 0
             agent_result.total_elapsed_seconds = time.time() - total_start
-            return agent_result
+            raise
 
         except Exception as e:
             last_error = f"{type(e).__name__}: {e}"

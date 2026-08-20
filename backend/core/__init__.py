@@ -27,6 +27,7 @@ from transagent.backend.core.skills.skill import (
 )
 from transagent.backend.core.skills.pre_skills.strategy_formulation.scripts.strategy_skill import StrategySkill
 from transagent.backend.core.skills.pre_skills.term_extraction.scripts.term_skill import TermExtractionSkill
+from transagent.backend.core.skills.pre_skills.term_translation.scripts.term_translation_skill import TermTranslationSkill
 from transagent.backend.core.skills.translate_skills.chunk_translate.scripts.chunk_translate_skill import ChunkTranslateSkill
 from transagent.backend.core.skills.translate_skills.consistency_fix.scripts.consistency_skill import ConsistencySkill
 from transagent.backend.core.skills.post_skills.quality_inspection.scripts.quality_skill import QualityInspectionSkill

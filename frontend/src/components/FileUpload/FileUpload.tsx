@@ -10,6 +10,17 @@ import type { DragEvent, ChangeEvent } from 'react';
 import type { UploadResponse, FormatType } from '../../types';
 import { uploadFile } from '../../api/client';
 import { mockUploadFile, isMockMode } from '../../api/mock';
+import {
+  AlertTriangle,
+  Button,
+  Card,
+  CheckCircle2,
+  FolderOpen,
+  FormatIcon,
+  Icon,
+  Rocket,
+  RotateCcw,
+} from '../ui';
 import './FileUpload.css';
 
 export interface FileUploadProps {
@@ -22,25 +33,17 @@ export interface FileUploadProps {
 }
 
 /** 支持的格式及对应的 accept 属性 */
-const ACCEPTED_EXTENSIONS = ['.md', '.docx', '.txt'];
+const ACCEPTED_EXTENSIONS = ['.md', '.docx', '.doc', '.pdf', '.txt'];
 const ACCEPT_STRING = ACCEPTED_EXTENSIONS.join(',');
 
 /** 最大文件大小 50MB */
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
-/** 格式对应的图标 */
-const FORMAT_ICONS: Record<FormatType, string> = {
-  md: '📝',
-  docx: '📄',
-  pdf: '📕',
-  text: '📃',
-  image: '🖼️',
-};
-
 /** 格式对应的中文名 */
 const FORMAT_LABELS: Record<FormatType, string> = {
   md: 'Markdown',
   docx: 'Word 文档',
+  doc: 'Word 文档 (旧版)',
   pdf: 'PDF',
   text: '纯文本',
   image: '图片',
@@ -191,10 +194,10 @@ export function FileUpload({
   // ── 渲染：上传成功后的结果卡片 ──
   if (result && !error) {
     return (
-      <div className="card upload-result">
+      <Card className="upload-result">
         <div className="upload-result-header">
           <span className="upload-result-icon">
-            {FORMAT_ICONS[result.format] || '📎'}
+            <FormatIcon format={result.format} />
           </span>
           <div className="upload-result-info">
             <span className="upload-result-filename">{result.filename}</span>
@@ -207,7 +210,9 @@ export function FileUpload({
               {result.page_count ? ` · ${result.page_count} 页` : ''}
             </span>
           </div>
-          <span className="upload-result-check">✅</span>
+          <span className="upload-result-check">
+            <Icon icon={CheckCircle2} size={18} />
+          </span>
         </div>
 
         {result.md_preview && (
@@ -217,14 +222,14 @@ export function FileUpload({
         )}
 
         <div className="upload-result-actions">
-          <button className="btn-secondary" onClick={handleReset}>
+          <Button variant="outline" icon={<Icon icon={RotateCcw} size={15} />} onClick={handleReset}>
             重新上传
-          </button>
-          <button className="btn-primary" onClick={handleStartTranslate}>
-            🚀 开始翻译
-          </button>
+          </Button>
+          <Button icon={<Icon icon={Rocket} size={15} />} onClick={handleStartTranslate}>
+            开始翻译
+          </Button>
         </div>
-      </div>
+      </Card>
     );
   }
 
@@ -266,7 +271,7 @@ export function FileUpload({
         ) : (
           <div className="upload-zone-content">
             <span className="upload-zone-icon">
-              {error ? '⚠️' : '📁'}
+              <Icon icon={error ? AlertTriangle : FolderOpen} size={36} />
             </span>
             <p className="upload-zone-text">
               {error
@@ -274,7 +279,7 @@ export function FileUpload({
                 : '拖拽文件到此处，或点击选择文件'}
             </p>
             <p className="upload-zone-hint">
-              支持 .md / .docx / .txt 格式，最大 50MB
+              支持 .md / .docx / .doc / .pdf / .txt 格式，最大 50MB
             </p>
           </div>
         )}
