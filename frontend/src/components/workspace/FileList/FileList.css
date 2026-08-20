@@ -1,0 +1,143 @@
+/* ══════════════════════════════════════════════════════════════════
+   FileList 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+/* ── 空态 ── */
+.file-list-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  padding: 24px;
+  text-align: center;
+}
+
+.file-list-empty-icon {
+  display: inline-flex;
+  color: var(--gray-300);
+  margin-bottom: 4px;
+}
+
+.file-list-empty p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.file-list-empty-hint {
+  font-size: var(--text-xs);
+}
+
+/* ── 分组 ── */
+.file-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.file-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+}
+
+.file-group-icon {
+  display: inline-flex;
+  color: var(--muted-foreground);
+}
+
+.file-group-label {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.file-group-count {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: var(--radius-full);
+  padding: 0 7px;
+  line-height: 1.5;
+}
+
+/* ── 文件行 ── */
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.file-row:hover {
+  background: var(--accent);
+}
+
+.file-row.active {
+  background: var(--accent);
+}
+
+.file-kind-icon {
+  display: inline-flex;
+  color: var(--muted-foreground);
+  width: 22px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-row.active .file-kind-icon {
+  color: var(--accent-foreground);
+}
+
+.file-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.file-download-btn {
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.file-row:hover .file-download-btn {
+  opacity: 1;
+}
+
+.file-download-btn:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}

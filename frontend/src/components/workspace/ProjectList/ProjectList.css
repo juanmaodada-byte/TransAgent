@@ -1,0 +1,172 @@
+/* ══════════════════════════════════════════════════════════════════
+   ProjectList 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.project-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px;
+}
+
+.project-list-title {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.project-add-btn {
+  color: var(--muted-foreground);
+}
+
+.project-add-btn:hover {
+  color: var(--foreground);
+}
+
+/* ── 空态 ── */
+.project-list-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  line-height: 1.8;
+}
+
+/* ── 项目行 ── */
+.project-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.project-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.project-row:hover {
+  background: var(--accent);
+}
+
+.project-row.active {
+  background: var(--accent);
+}
+
+.project-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.project-rename-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 3px 6px;
+  border: 1px solid var(--ring);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+/* ── 状态徽章 ── */
+.project-status {
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.project-status.st-running {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.project-status.st-waiting {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.project-status.st-done {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.project-status.st-error {
+  background: var(--destructive-light);
+  color: var(--destructive);
+}
+
+.project-status.st-aborted {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+/* ── 元信息行 ── */
+.project-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-meta {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.project-row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.project-row:hover .project-row-actions {
+  opacity: 1;
+}
+
+.project-mini-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.project-mini-btn:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.project-mini-btn.danger:hover {
+  background: var(--destructive-light);
+  color: var(--destructive);
+}

@@ -1,0 +1,159 @@
+/* ══════════════════════════════════════════════════════════════════
+   MdConverterDialog 样式（D8.1 MVP）
+   ══════════════════════════════════════════════════════════════════ */
+
+.md-converter-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.md-converter-dialog {
+  width: min(680px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  animation: confirm-in 0.24s ease-out;
+}
+
+.md-converter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.md-converter-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+}
+
+.md-converter-desc {
+  margin: 12px 20px 0;
+  font-size: var(--text-sm);
+  color: var(--gray-600);
+  line-height: 1.6;
+}
+
+.md-converter-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 14px 20px;
+  min-height: 150px;
+  padding: 28px 16px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  border: 2px dashed var(--input);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.md-converter-drop strong {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+}
+
+.md-converter-drop-sub {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.md-converter-drop:hover {
+  border-color: var(--ring);
+  background: var(--background-subtle);
+}
+
+.md-converter-drop.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.md-converter-drop.busy {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.md-converter-drop input {
+  display: none;
+}
+
+.md-converter-error {
+  margin: 0 20px 12px;
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+  color: var(--destructive, #dc2626);
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.md-converter-result {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 20px 18px;
+}
+
+.md-converter-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.md-converter-count {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.md-converter-count.over {
+  color: #dc2626;
+  font-weight: var(--fw-semibold);
+}
+
+.md-converter-textarea {
+  flex: 1;
+  min-height: 220px;
+  resize: vertical;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.md-converter-textarea:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+}
+
+.md-converter-tip {
+  margin: 10px 0 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}

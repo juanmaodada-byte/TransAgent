@@ -1,0 +1,128 @@
+/* ══════════════════════════════════════════════════════════════════
+   InputArea 样式 — 底部输入区
+   ══════════════════════════════════════════════════════════════════ */
+
+.input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 12px;
+  background: var(--background);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.input-area.busy {
+  opacity: 0.75;
+}
+
+/* ── 输入框容器 ── */
+.input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  padding: 8px 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-box:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+}
+
+.input-box.over-limit {
+  border-color: var(--destructive);
+}
+
+/* ── 上传按钮 ── */
+.input-upload-btn {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.input-upload-btn:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.input-file-hidden {
+  display: none;
+}
+
+/* ── 文本输入 ── */
+.input-textarea {
+  flex: 1;
+  min-height: 132px;
+  max-height: 280px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--foreground);
+  background: transparent;
+  padding: 6px 4px;
+}
+
+.input-textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.input-textarea:disabled {
+  cursor: not-allowed;
+}
+
+/* ── 字符统计 ── */
+.input-char-count {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  align-self: flex-end;
+  flex-shrink: 0;
+  padding-bottom: 10px;
+}
+
+.input-char-count.over {
+  color: var(--destructive);
+  font-weight: var(--fw-semibold);
+}
+
+/* ── 发送按钮 ── */
+.input-send-btn {
+  color: var(--primary-foreground);
+  flex-shrink: 0;
+}
+
+.input-send-btn:disabled {
+  background-color: var(--secondary);
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+
+/* 停止键：浅红底 + 红色方块，悬停实心红 */
+.input-send-btn.stop {
+  background-color: var(--destructive-light);
+  color: var(--destructive);
+  border-color: transparent;
+}
+
+.input-send-btn.stop:hover:not(:disabled) {
+  background-color: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+/* ── 提示行 ── */
+.input-hint-row {
+  padding: 0 4px;
+}
+
+.input-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}

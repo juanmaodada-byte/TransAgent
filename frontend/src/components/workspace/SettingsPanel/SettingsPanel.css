@@ -1,0 +1,199 @@
+/* ══════════════════════════════════════════════════════════════════
+   SettingsPanel 样式 — 中栏设置视图
+   ══════════════════════════════════════════════════════════════════ */
+
+.settings-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 28px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-panel-body {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.settings-panel > .ui-card,
+.settings-panel > .settings-note {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* ── 加载 / 错误 ── */
+.settings-panel-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.settings-panel-error {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-panel-error p {
+  margin: 0;
+}
+
+/* ── 面板头 ── */
+.settings-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.settings-panel-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.settings-panel-subtitle {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  margin-top: 4px;
+}
+
+.settings-panel-mode {
+  margin-top: 6px;
+}
+
+/* ── API 配置卡 ── */
+.settings-card {
+  overflow: hidden;
+}
+
+.settings-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.settings-card-icon {
+  display: inline-flex;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.settings-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── 服务商/模型 双列 ── */
+.channel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ── 字段 ── */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-600);
+}
+
+/* API Key 输入（含显隐切换） */
+.api-key-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.api-key-field {
+  padding-right: 40px;
+}
+
+.api-key-toggle {
+  position: absolute;
+  right: 2px;
+  width: 32px;
+  height: 32px;
+  color: var(--muted-foreground);
+}
+
+.api-key-toggle:hover {
+  color: var(--foreground);
+}
+
+/* ── 底部 ── */
+.settings-footer {
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding: 16px 24px;
+}
+
+.settings-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--success);
+}
+
+.settings-save-status.error {
+  color: var(--destructive);
+}
+
+.settings-save-error {
+  color: var(--destructive);
+}
+
+.settings-note {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  text-align: center;
+  margin: 0;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 640px) {
+  .settings-panel {
+    padding: 24px 16px 40px;
+  }
+
+  .channel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-footer .ui-button {
+    width: 100%;
+  }
+}

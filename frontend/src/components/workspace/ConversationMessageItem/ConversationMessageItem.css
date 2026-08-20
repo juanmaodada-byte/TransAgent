@@ -1,0 +1,137 @@
+/* ══════════════════════════════════════════════════════════════════
+   ConversationMessageItem 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.cmi-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  animation: cmi-in 0.22s ease-out;
+}
+
+@keyframes cmi-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── 用户消息 ── */
+.cmi-row.user {
+  justify-content: flex-end;
+}
+
+.cmi-bubble.user {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 80%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-sm)
+    var(--radius-md);
+  padding: 9px 14px;
+}
+
+.cmi-user-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.cmi-user-body {
+  min-width: 0;
+}
+
+.cmi-user-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.cmi-user-text {
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 140px;
+  overflow-y: auto;
+  opacity: 0.85;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  padding-top: 6px;
+}
+
+/* ── 智能体消息 ── */
+.cmi-row.assistant {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.cmi-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cmi-content {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 44px);
+}
+
+.cmi-type-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cmi-type-title {
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cmi-open-btn {
+  color: var(--muted-foreground);
+}
+
+.cmi-open-btn:hover {
+  color: var(--foreground);
+}
+
+/* 术语确认完成提示 */
+.cmi-terms-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.cmi-terms-done svg {
+  color: var(--success);
+}

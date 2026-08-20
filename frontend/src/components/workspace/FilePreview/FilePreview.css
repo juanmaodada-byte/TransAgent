@@ -1,0 +1,77 @@
+/* ══════════════════════════════════════════════════════════════════
+   FilePreview 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.file-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--background);
+  border-top: 1px solid var(--border);
+}
+
+/* ── 空态 ── */
+.file-preview-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.fp-empty-icon {
+  display: inline-flex;
+  color: var(--gray-300);
+}
+
+.file-preview-empty p {
+  margin: 0;
+}
+
+/* ── 头部 ── */
+.fp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.fp-download-btn {
+  flex-shrink: 0;
+}
+
+/* ── 内容 ── */
+.fp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.fp-pre {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--gray-700);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

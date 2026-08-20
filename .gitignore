@@ -11,8 +11,8 @@ data/user_llm.json
 dist/
 build/
 
-# Test output / scratch
-workspace/
+# Test output / scratch（锚定根目录：否则会误忽略 frontend/src/components/workspace/ 三栏组件）
+/workspace/
 *.bak
 
 # Document module runtime artifacts (regenerated at runtime)

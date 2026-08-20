@@ -1,0 +1,70 @@
+/* ══════════════════════════════════════════════════════════════════
+   LeftPanel 样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.left-panel {
+  width: 220px;
+  min-width: 220px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--background-subtle);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* ── 功能区 ── */
+.left-features {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.feature-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-600);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.feature-entry:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.feature-icon {
+  display: inline-flex;
+  width: 20px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.feature-entry:hover .feature-icon {
+  color: var(--accent-foreground);
+}
+
+/* ── 项目区 ── */
+.left-projects {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+  display: flex;
+}
+
+.left-projects > * {
+  flex: 1;
+  min-height: 0;
+}
